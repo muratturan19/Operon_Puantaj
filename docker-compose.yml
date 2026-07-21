@@ -1,0 +1,69 @@
+services:
+  puantaj:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: puantaj
+    environment:
+      - AUTH_MODE=saas
+      - PORTAL_URL=https://portal.kolektif360.com
+      - PORTAL_ISSUER=https://portal.kolektif360.com
+      - PORTAL_APP_SLUG=puantaj
+      - DATABASE_HOST=puantaj-postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=postgres
+      - DATABASE_PASSWORD=${DB_PASSWORD}
+      # Tek-DB (onprem tarzı) ayarlar saas modda route'larca kullanılmaz (get_session
+      # tenant-routed'a bağlanır) ama modül import'unda zararsız bir engine nesnesi
+      # oluşturulduğu için geçerli bir DSN vermek yeterli.
+      - DATABASE_URL=postgresql+psycopg2://postgres:${DB_PASSWORD}@puantaj-postgres:5432/postgres
+    volumes:
+      # Bug (2026-07-06): bu kalıcı volume olmadan, her `docker compose build` +
+      # `up -d` yüklenen Excel dosyalarını (tenant başına master.xlsx) local repo
+      # kopyasıyla SESSİZCE eziyordu — export edilen/işlenmiş veri her deploy'da
+      # kayboluyordu. Artık container'lar arası kalıcı.
+      - puantaj_uploads:/app/app/data/uploads
+    restart: unless-stopped
+    depends_on:
+      puantaj-postgres:
+        condition: service_healthy
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.routers.puantaj.rule=Host(`puantaj.kolektif360.com`)"
+      - "traefik.http.routers.puantaj.entrypoints=websecure"
+      - "traefik.http.routers.puantaj.tls.certresolver=letsencrypt"
+      - "traefik.http.services.puantaj.loadbalancer.server.port=8000"
+      - "traefik.http.routers.puantaj-http.rule=Host(`puantaj.kolektif360.com`)"
+      - "traefik.http.routers.puantaj-http.entrypoints=web"
+      - "traefik.http.routers.puantaj-http.middlewares=puantaj-https-redirect"
+      - "traefik.http.middlewares.puantaj-https-redirect.redirectscheme.scheme=https"
+      # portal-auth EKLENMEDİ — SSO akışını kırar
+
+  puantaj-postgres:
+    image: postgres:15
+    container_name: puantaj-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=postgres
+    volumes:
+      - puantaj_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - web
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  puantaj_pgdata:
+  puantaj_uploads:
+
+networks:
+  web:
+    external: true

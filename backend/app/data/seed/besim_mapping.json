@@ -1,0 +1,42 @@
+{
+  "sablon_versiyon": "1.0",
+  "musteri_adi": "BESIM (örnek dosya)",
+  "durum": "approved",
+  "sheet_mapping": {
+    "sheet_ad_icerir": "BANKA",
+    "sheet_ad_haric": ["ELDEN"],
+    "baslangic_satir": 3,
+    "toplam_satir_etiketi": "TOPLAM",
+    "kimlik_kolon_harfi": "B",
+    "fm_saat_kolon": "J",
+    "oran_kolon": "I",
+    "okuma_alanlari": [
+      {"hedef_alan": "ad_soyad", "kolon_harfi": "B", "varsayilan_deger": null, "guven": 1.0, "not_": ""},
+      {"hedef_alan": "maas", "kolon_harfi": "C", "varsayilan_deger": null, "guven": 1.0, "not_": ""},
+      {"hedef_alan": "ng", "kolon_harfi": "D", "varsayilan_deger": 30, "guven": 1.0, "not_": ""},
+      {
+        "hedef_alan": "calisma_tipi_kodu",
+        "kolon_harfi": null,
+        "varsayilan_deger": "MY",
+        "guven": 1.0,
+        "not_": "BESIM.xlsx'te çalışan tipi kolonu yok; şirkette bu ayrım fiilen de yok (kullanıcı onayı). MY (7.5 saat) varsayılan seçildi çünkü BESIM'in kendi H kolonu formülü zaten '=F/7.5' — hardcoded 7,5 saat ile matematiksel olarak tutarlı."
+      }
+    ],
+    "yazma_alanlari": [
+      {"hedef_alan": "cgun", "kolon_harfi": "E", "sifirsa": "zero", "fallback_formula_sablonu": null},
+      {"hedef_alan": "izin_saat", "kolon_harfi": "L", "sifirsa": "null", "fallback_formula_sablonu": null},
+      {"hedef_alan": "fm_saat", "kolon_harfi": "J", "sifirsa": "null", "fallback_formula_sablonu": null},
+      {
+        "hedef_alan": "fm_tl",
+        "kolon_harfi": "K",
+        "sifirsa": "formula",
+        "fallback_formula_sablonu": "{fm_saat_kolon}{row}*{oran_kolon}{row}"
+      }
+    ]
+  },
+  "notlar": [
+    "Sadece BANKA sayfaları işlenir; ELDEN sayfalarına dokunulmaz (Puantaj_Brief §6).",
+    "Export yalnızca o dönem en az bir girişi olan personelin E/L/J/K hücrelerine yazar (CLAUDE.md §7).",
+    "K hücresi FM.TL=0 iken sayı yerine ={J}{row}*{I}{row} formülüne geri döner (Puantaj.html exportBtn davranışı, birebir korunuyor)."
+  ]
+}

@@ -1,0 +1,9 @@
+backend/.venv
+backend/.pytest_cache
+backend/**/__pycache__
+backend/.env
+backend/app/data/uploads
+frontend/node_modules
+frontend/dist
+.git
+*.xlsx
