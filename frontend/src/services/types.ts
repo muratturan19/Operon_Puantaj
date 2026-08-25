@@ -85,6 +85,19 @@ export interface MeResponse {
   izinler: Record<string, boolean>
 }
 
+export interface HataKaydi {
+  id: number
+  istek_id: string
+  zaman: string
+  yol: string
+  metod: string
+  sorgu: string | null
+  kullanici: string | null
+  hata_tipi: string
+  mesaj: string
+  traceback_metni: string | null
+}
+
 export interface AuditLogEntry {
   id: number
   aktor_adi: string

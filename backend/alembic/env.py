@@ -26,9 +26,15 @@ if not _configured_url or _configured_url == "driver://user:pass@localhost/dbnam
     config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 # Interpret the config file for Python logging.
-# This line sets up loggers basically.
+# Bug (2026-08-25, ÜRETİM OLAYI): `disable_existing_loggers` varsayılanı True'dur.
+# core/tenant_db.py migration'ları CANLI FastAPI process'inin İÇİNDE
+# (`command.upgrade`) çalıştırdığı için bu dosya da o process'te import edilir ve
+# varsayılan davranış `uvicorn.access` / `uvicorn.error` / `operon_puantaj.*`
+# logger'larını KALICI olarak susturur. Sonuç: 2026-07-09 14:50'deki ilk tenant
+# girişinden itibaren 6 hafta boyunca uygulama tek satır log üretmedi, müşteri
+# hata bildirdiğinde elimizde hiçbir kayıt yoktu. Bayrak asla kaldırılmamalı.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = SQLModel.metadata
 

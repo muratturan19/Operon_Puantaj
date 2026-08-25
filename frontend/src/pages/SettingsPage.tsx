@@ -45,6 +45,10 @@ export function SettingsPage() {
       <Typography variant="h5" sx={{ fontWeight: 700 }}>
         Excel Aktarım
       </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 640 }}>
+        Mevcut Excel dosyanızdaki personel listesini içe aktarın, ya da doldurduğunuz puantajı
+        aynı Excel düzeninde geri dışa aktarın.
+      </Typography>
 
       {mesaj && <Alert severity="success">{mesaj}</Alert>}
       {hata && <Alert severity="error">{hata}</Alert>}
@@ -93,7 +97,12 @@ export function SettingsPage() {
           <Button
             variant="contained"
             disabled={!sablonId}
-            onClick={() => excelDisaAktar(sablonId as number, donemId === '' ? undefined : donemId)}
+            onClick={async () => {
+              setMesaj(null)
+              setHata(null)
+              const uyari = await excelDisaAktar(sablonId as number, donemId === '' ? undefined : donemId)
+              if (uyari) setHata(uyari)
+            }}
           >
             İndir
           </Button>

@@ -9,6 +9,7 @@ from app.models.personel_donem_ayar import PersonelDonemAyar
 from app.models.tatil import Tatil
 from app.models.puantaj import PuantajGirisi
 from app.models.audit import AuditLog
+from app.models.hata import HataKaydi
 from app.models.excel_mapping import ExcelMappingTemplate
 
 __all__ = [
@@ -22,5 +23,6 @@ __all__ = [
     "Tatil",
     "PuantajGirisi",
     "AuditLog",
+    "HataKaydi",
     "ExcelMappingTemplate",
 ]

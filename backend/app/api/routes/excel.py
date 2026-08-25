@@ -13,9 +13,13 @@ kopyasına yazılır, orijinal asla üzerine yazılarak bozulmaz.
 from __future__ import annotations
 
 import io
+import logging
+import os
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -38,16 +42,22 @@ from app.models.tatil import Tatil
 from app.services.excel_adapter import (
     TR_AYLAR,
     RosterKaydi,
+    aktif_sayfa_yap,
     en_guncel_sheet,
     list_matching_sheets,
     open_workbook,
     parse_sheet_donem,
     read_roster,
+    roster_satiri_ekle,
+    save_workbook,
+    sayfayi_kronolojik_yerlestir,
     write_export,
     yeni_ay_sayfasi_olustur,
 )
 from app.services.payroll_calc import GunlukGiris, hesapla
-from app.services.personel_filtre import efektif_ng, ise_disi_gun_sayisi
+from app.services.personel_filtre import efektif_maas, efektif_ng, ise_disi_gun_sayisi
+
+logger = logging.getLogger("operon_puantaj.excel")
 
 router = APIRouter(prefix="/api/excel", tags=["excel"])
 
@@ -230,6 +240,27 @@ async def ice_aktar(
     )
 
 
+def _master_kaydet(wb, master_path: Path) -> None:
+    """Üretilen workbook'u master'ın üzerine ATOMİK olarak yazar.
+
+    Bug (2026-08-25): export ürettiği yeni ay sayfalarını yalnızca indirilen
+    dosyaya koyuyor, master'a HİÇ yazmıyordu. Master 3 Temmuz'daki ilk yüklemede
+    donmuştu; her export Haziran roster'ından yeniden türetiliyor, müşterinin
+    dosyada yaptığı manuel girdiler (avans/icra/prim) ve personel değişiklikleri
+    her seferinde kayboluyordu. Artık export kümülatif.
+
+    İlk üzerine yazmadan önce orijinal dosyanın bir kopyası saklanır — Faz 1'de
+    master tek kaynak, geri dönüşü olmayan bir yazma bırakılmaz.
+    """
+    yedek = master_path.with_name(master_path.stem + ".ilk_yukleme" + master_path.suffix)
+    if not yedek.exists():
+        shutil.copy2(master_path, yedek)
+
+    gecici = master_path.with_name(master_path.stem + ".tmp" + master_path.suffix)
+    save_workbook(wb, str(gecici))
+    os.replace(gecici, master_path)   # aynı dosya sistemi — yarım kalmış dosya bırakmaz
+
+
 @router.get("/export")
 def disa_aktar(
     mapping_template_id: int,
@@ -249,11 +280,15 @@ def disa_aktar(
 
     wb = open_workbook(str(master_path))
 
-    # Kapsam: donem_id verilmezse GİRİŞİ OLAN TÜM DÖNEMLER yazılır (Puantaj_Brief §10 — kapanmış karar)
+    # Kapsam: donem_id verilmezse GİRİŞİ OLAN TÜM DÖNEMLER yazılır (Puantaj_Brief §10 — kapanmış karar).
+    # ORDER BY şart (2026-08-25): sırasız sorguda dönemler DB'nin döndürdüğü keyfi
+    # sırayla işleniyordu ve yeni ay sayfası, o an workbook'ta bulunan "en güncel"
+    # sayfadan kopyalandığı için Ağustos'un şablonunun Temmuz mu Haziran mı olacağı
+    # şansa kalıyordu. Kronolojik sıra bunu deterministik yapar.
     donem_sorgu = select(Donem).where(Donem.sirket_id == current_user.sirket_id)
     if donem_id is not None:
         donem_sorgu = donem_sorgu.where(Donem.id == donem_id)
-    donemler = session.exec(donem_sorgu).all()
+    donemler = session.exec(donem_sorgu.order_by(Donem.yil, Donem.ay)).all()
 
     tatiller = {t.tarih for t in session.exec(
         select(Tatil).where(Tatil.sirket_id == current_user.sirket_id)
@@ -261,13 +296,25 @@ def disa_aktar(
 
     sirket = session.get(Sirket, current_user.sirket_id)
 
+    yazilan_sayfalar: list = []
+    eklenen_personel: list[str] = []
+    yazilamayan_personel: list[str] = []
+    bos_donemler: list[str] = []
+
     for donem in donemler:
+        ay_adi = f"{TR_AYLAR[donem.ay - 1]} {donem.yil}"
         girisi_olan_personel_id = {
             g.personel_id
             for g in session.exec(select(PuantajGirisi).where(PuantajGirisi.donem_id == donem.id)).all()
         }
-        if not girisi_olan_personel_id and donem_id is None:
-            continue  # "işaretli tüm aylar" — hiç girişi olmayan dönem export'a girmez
+        if not girisi_olan_personel_id:
+            # Hiç girişi olmayan dönemde uygulama kaynak DEĞİLDİR — master'daki
+            # tarihî sayfa (ör. müşterinin kendi Ocak-Haziran verisi) olduğu gibi
+            # bırakılır. donem_id ile açıkça istense bile: 2026-08-25'ten beri
+            # workbook master'a geri yazıldığı için buraya dokunmak müşterinin
+            # geçmiş verisini kalıcı olarak silmek demekti.
+            bos_donemler.append(ay_adi)
+            continue
 
         if donem.excel_sheet_adi and donem.excel_sheet_adi in wb.sheetnames:
             ws = wb[donem.excel_sheet_adi]
@@ -281,8 +328,9 @@ def disa_aktar(
             if yeni_baslik in wb.sheetnames:
                 ws = wb[yeni_baslik]  # önceki bir export'ta zaten oluşturulmuş
             else:
-                referans_ws = en_guncel_sheet(wb, mapping.sheet_mapping)
+                referans_ws = en_guncel_sheet(wb, mapping.sheet_mapping, once=(donem.yil, donem.ay))
                 if referans_ws is None:
+                    logger.warning("%s için şablon alınacak sayfa yok, atlandı", ay_adi)
                     continue  # şablon alınacak hiçbir sayfa yok — oluşturulamaz
                 referans_donem = parse_sheet_donem(referans_ws.title)
                 ws = yeni_ay_sayfasi_olustur(
@@ -290,6 +338,8 @@ def disa_aktar(
                     referans_donem=referans_donem, yeni_donem=(donem.yil, donem.ay),
                     yeni_baslik=yeni_baslik,
                 )
+                sayfayi_kronolojik_yerlestir(wb, ws, (donem.yil, donem.ay))
+                logger.info("Yeni ay sayfası oluşturuldu: %s (şablon: %s)", yeni_baslik, referans_ws.title)
             donem.excel_sheet_adi = yeni_baslik
             session.add(donem)
             session.commit()
@@ -306,6 +356,28 @@ def disa_aktar(
             for kayit in read_roster(ws, mapping)
         }
 
+        # Bug (2026-08-25, SESSİZ VERİ KAYBI): uygulamadan eklenen personelin
+        # Excel roster'ında satırı olmadığı için puantajı export'a HİÇ yazılmıyor,
+        # üstelik uyarı da verilmiyordu (ör. RÜMEYSA TEMURAYAK, Ağustos 2026 —
+        # 25 günlük giriş sessizce düşmüştü). Artık eksik olana satır açılıyor.
+        for personel_id in sorted(girisi_olan_personel_id):
+            personel = session.get(Personel, personel_id)
+            if personel is None or personel.ad_soyad in satir_by_ad_soyad:
+                continue
+            yeni_satir = roster_satiri_ekle(
+                ws, mapping,
+                {
+                    "ad_soyad": personel.ad_soyad,
+                    "maas": efektif_maas(session, personel.id, donem),
+                    "ng": efektif_ng(session, personel.id, donem),
+                },
+            )
+            if yeni_satir is None:
+                yazilamayan_personel.append(f"{personel.ad_soyad} ({ay_adi})")
+            else:
+                satir_by_ad_soyad[personel.ad_soyad] = yeni_satir
+                eklenen_personel.append(f"{personel.ad_soyad} ({ay_adi})")
+
         # Bug (2026-07-06): N.G kolonu roster'da hep ÖNCEKİ ayın statik değerini
         # gösteriyordu (ör. Haziran'dan kopyalanan sayfada hep 30) — kullanıcı
         # geri bildirimi: "Ç.GÜN 31 olanları alamıyor, sanırım N.G 30 olduğu için".
@@ -318,7 +390,15 @@ def disa_aktar(
             (o.kolon_harfi for o in mapping.sheet_mapping.okuma_alanlari if o.hedef_alan == "ng" and o.kolon_harfi),
             None,
         )
-        if ng_kolon:
+        # Aynı sınıf hata (2026-07-06): N.G'deki gibi, MAAŞ kolonu da müşterinin
+        # KENDİ formülleri (Y.TL=MAAŞ/N.G vb.) için roster'da referans — zam
+        # girildiğinde bu kolon güncellenmezse müşterinin kendi hesapları eski
+        # maaşla yanlış sonuç üretmeye devam eder. `efektif_maas` ile aynı mantık.
+        maas_kolon = next(
+            (o.kolon_harfi for o in mapping.sheet_mapping.okuma_alanlari if o.hedef_alan == "maas" and o.kolon_harfi),
+            None,
+        )
+        if ng_kolon or maas_kolon:
             aktif_personel_by_ad = {
                 p.ad_soyad: p
                 for p in session.exec(select(Personel).where(Personel.sirket_id == current_user.sirket_id)).all()
@@ -327,7 +407,10 @@ def disa_aktar(
                 personel_obj = aktif_personel_by_ad.get(ad_soyad)
                 if personel_obj is None:
                     continue
-                ws[f"{ng_kolon}{satir}"] = efektif_ng(session, personel_obj.id, donem)
+                if ng_kolon:
+                    ws[f"{ng_kolon}{satir}"] = efektif_ng(session, personel_obj.id, donem)
+                if maas_kolon:
+                    ws[f"{maas_kolon}{satir}"] = efektif_maas(session, personel_obj.id, donem)
 
         for personel_id in girisi_olan_personel_id:
             personel = session.get(Personel, personel_id)
@@ -335,7 +418,7 @@ def disa_aktar(
                 continue
             bu_donem_satiri = satir_by_ad_soyad.get(personel.ad_soyad)
             if bu_donem_satiri is None:
-                continue  # bu kişi bu dönemin sayfasında yok (ör. henüz işe girmemiş)
+                continue  # satır açılamadı — `yazilamayan_personel` ile raporlanıyor
             tip = session.get(CalismaTipi, personel.calisma_tipi_id)
             gunluk_saat = tip.gunluk_saat if tip else 7.5
 
@@ -351,7 +434,7 @@ def disa_aktar(
                 ).all()
             ]
             sonuc = hesapla(
-                maas=personel.maas, ng=efektif_ng(session, personel.id, donem), gunluk_saat=gunluk_saat,
+                maas=efektif_maas(session, personel.id, donem), ng=efektif_ng(session, personel.id, donem), gunluk_saat=gunluk_saat,
                 girisler=girisler, tatiller=tatiller,
                 ise_disi_gun=ise_disi_gun_sayisi(personel, donem.yil, donem.ay),
                 raporlu_politikasi=sirket.raporlu_politikasi if sirket else "hic_odeme",
@@ -367,15 +450,48 @@ def disa_aktar(
             }
             dokunulan_satirlar.add(bu_donem_satiri)
 
-        write_export(ws, mapping, sonuc_by_row, dokunulan_satirlar)
+        # Master artık kalıcı olduğu için, girişi kaldırılan bir kişinin ÖNCEKİ
+        # export'tan kalan değeri sayfada asılı kalmasın: bu dönemin roster'ındaki
+        # dokunulmamış satırlar da yazma alanları için sıfırlanır (sonuc_by_row'da
+        # olmadıkları için `sifirsa` kuralı boş/fallback değeri yazar). Sonuç,
+        # sayfa her export'ta sıfırdan üretiliyormuş gibi deterministik kalır.
+        sifirlanacak = {s for s in satir_by_ad_soyad.values() if s is not None} - dokunulan_satirlar
+        write_export(ws, mapping, sonuc_by_row, dokunulan_satirlar | sifirlanacak)
+        yazilan_sayfalar.append(ws)
+        logger.info(
+            "Export: %s | %s kişi yazıldı, %s satır sıfırlandı",
+            ay_adi, len(dokunulan_satirlar), len(sifirlanacak),
+        )
+
+    # Dosya açıldığında en güncel yazılan ay görünsün (dönemler kronolojik sıralı).
+    if yazilan_sayfalar:
+        aktif_sayfa_yap(wb, yazilan_sayfalar[-1])
+        _master_kaydet(wb, master_path)
 
     buffer = io.BytesIO()
     wb.calculation.fullCalcOnLoad = True
     wb.save(buffer)
     buffer.seek(0)
 
+    uyarilar: list[str] = []
+    if eklenen_personel:
+        uyarilar.append(
+            "Excel'de satırı olmayan personel için yeni satır açıldı: " + ", ".join(eklenen_personel)
+        )
+    if yazilamayan_personel:
+        uyarilar.append("YAZILAMADI (satır açılamadı): " + ", ".join(yazilamayan_personel))
+    if donem_id is not None and bos_donemler:
+        uyarilar.append(
+            "Hiç puantaj girişi olmadığı için dokunulmayan dönem: " + ", ".join(bos_donemler)
+        )
+
+    headers = {"Content-Disposition": "attachment; filename=puantaj_export.xlsx"}
+    if uyarilar:
+        # HTTP başlığı yalnızca latin-1 taşır — Türkçe karakterler için yüzde kodlama.
+        headers["X-Puantaj-Uyari"] = quote(" | ".join(uyarilar))
+
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=puantaj_export.xlsx"},
+        headers=headers,
     )

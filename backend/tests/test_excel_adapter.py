@@ -19,12 +19,16 @@ import pytest
 
 from app.models.excel_mapping_schema import ExcelMappingConfig
 from app.services.excel_adapter import (
+    aktif_sayfa_yap,
     en_guncel_sheet,
     find_toplam_row,
     list_matching_sheets,
     open_workbook,
+    parse_sheet_donem,
     read_roster,
+    roster_satiri_ekle,
     save_workbook,
+    sayfayi_kronolojik_yerlestir,
     write_export,
     yeni_ay_sayfasi_olustur,
 )
@@ -212,3 +216,85 @@ def test_diger_sayfalar_ve_elden_hic_degismez(besim_copy, besim_mapping):
     for name, snapshot in before_other_sheets.items():
         for addr, val in snapshot.items():
             assert wb2[name][addr].value == val, f"{name}!{addr} beklenmedik şekilde değişti"
+
+
+# ---------------------------------------------------------------------------
+# 2026-08-25 üretim olayı regresyonları
+# Müşteri: "normal puantajları giriyoruz, bazen personel de ekliyoruz, ama Excel
+# çıktısı aldığımızda güncel girdiğimiz tabloyu değil bambaşka bir şeyi alıyoruz."
+# ---------------------------------------------------------------------------
+
+
+def _temmuz_sayfasi(wb, mapping):
+    referans = en_guncel_sheet(wb, mapping.sheet_mapping)
+    return yeni_ay_sayfasi_olustur(
+        wb, referans, mapping,
+        referans_donem=parse_sheet_donem(referans.title),
+        yeni_donem=(2026, 7),
+        yeni_baslik="TEMMUZ 2026 BANKA",
+    )
+
+
+def test_yeni_ay_sayfasi_kronolojik_yerine_tasinir(besim_copy, besim_mapping):
+    """copy_worksheet sayfayı en sona — "servis" sekmesinden bile sonraya — koyuyordu."""
+    wb = open_workbook(str(besim_copy))
+    ws = _temmuz_sayfasi(wb, besim_mapping)
+    assert wb.index(ws) == len(wb.worksheets) - 1  # copy_worksheet'in ham davranışı
+
+    sayfayi_kronolojik_yerlestir(wb, ws, (2026, 7))
+
+    assert wb.sheetnames.index("TEMMUZ 2026 BANKA") == wb.sheetnames.index("HAZİRAN 2026 ELDEN") + 1
+    assert wb.sheetnames.index("TEMMUZ 2026 BANKA") < wb.sheetnames.index("servis")
+
+
+def test_export_dosyasi_yazilan_ay_sekmesinde_acilir(besim_copy, besim_mapping, tmp_path):
+    """ASIL ŞİKÂYET: dosya master'dan miras kalan "HAZİRAN 2026 ELDEN" sekmesinde açılıyordu."""
+    wb = open_workbook(str(besim_copy))
+    assert wb.active.title == "HAZİRAN 2026 ELDEN"  # hatanın kaynağı
+
+    ws = _temmuz_sayfasi(wb, besim_mapping)
+    aktif_sayfa_yap(wb, ws)
+
+    hedef = tmp_path / "export.xlsx"
+    save_workbook(wb, str(hedef))
+
+    yeniden = open_workbook(str(hedef))
+    assert yeniden.active.title == "TEMMUZ 2026 BANKA"
+    assert [s.title for s in yeniden.worksheets if s.sheet_view.tabSelected] == ["TEMMUZ 2026 BANKA"]
+
+
+def test_roster_satiri_ekle_yeni_personeli_yazilabilir_yapar(besim_copy, besim_mapping):
+    """SESSİZ VERİ KAYBI: roster'da satırı olmayan personel export'ta atlanıyordu."""
+    wb = open_workbook(str(besim_copy))
+    ws = _temmuz_sayfasi(wb, besim_mapping)
+
+    once = read_roster(ws, besim_mapping)
+    toplam_once = find_toplam_row(ws, besim_mapping.sheet_mapping)
+    assert not any(k.alanlar["ad_soyad"] == "YENİ PERSONEL" for k in once)
+
+    yeni_satir = roster_satiri_ekle(
+        ws, besim_mapping, {"ad_soyad": "YENİ PERSONEL", "maas": 31000, "ng": 31}
+    )
+
+    assert yeni_satir == toplam_once  # TOPLAM'ın hemen üstüne açıldı
+    sonra = read_roster(ws, besim_mapping)
+    assert len(sonra) == len(once) + 1
+    assert sonra[-1].alanlar["ad_soyad"] == "YENİ PERSONEL"
+    assert sonra[-1].alanlar["maas"] == 31000
+    assert sonra[-1].alanlar["ng"] == 31
+    # Satır kendi hesap formüllerini referans satırdan çevrilmiş olarak taşımalı
+    assert ws[f"F{yeni_satir}"].value == f"=C{yeni_satir}/D{yeni_satir}"
+
+
+def test_roster_satiri_ekle_toplam_araligini_genisletir(besim_copy, besim_mapping):
+    """openpyxl insert_rows formülleri kaydırmaz; TOPLAM eksik toplardı."""
+    wb = open_workbook(str(besim_copy))
+    ws = _temmuz_sayfasi(wb, besim_mapping)
+    toplam_once = find_toplam_row(ws, besim_mapping.sheet_mapping)
+    assert ws[f"E{toplam_once}"].value == f"=SUM(E3:E{toplam_once - 1})"
+
+    yeni_satir = roster_satiri_ekle(ws, besim_mapping, {"ad_soyad": "YENİ PERSONEL", "maas": 1, "ng": 30})
+
+    toplam_sonra = find_toplam_row(ws, besim_mapping.sheet_mapping)
+    assert toplam_sonra == toplam_once + 1
+    assert ws[f"E{toplam_sonra}"].value == f"=SUM(E3:E{yeni_satir})"  # yeni satır toplama dahil

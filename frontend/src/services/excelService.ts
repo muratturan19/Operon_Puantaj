@@ -29,7 +29,15 @@ export async function excelIceAktar(mappingTemplateId: number, dosya: File): Pro
   return data
 }
 
-export async function excelDisaAktar(mappingTemplateId: number, donemId?: number): Promise<void> {
+/**
+ * Excel'i indirir ve sunucunun döndürdüğü uyarıyı (varsa) geri verir.
+ *
+ * Uyarı `X-Puantaj-Uyari` başlığında yüzde kodlu gelir: 2026-08-25'e kadar
+ * Excel roster'ında satırı olmayan personelin puantajı export'a hiç yazılmıyor
+ * ve kullanıcı bunu HİÇBİR yerden göremiyordu. Artık sunucu satırı kendisi
+ * açıyor, kimler için açtığını da burada bildiriyor.
+ */
+export async function excelDisaAktar(mappingTemplateId: number, donemId?: number): Promise<string | null> {
   const params: Record<string, number> = { mapping_template_id: mappingTemplateId }
   if (donemId) params.donem_id = donemId
 
@@ -40,4 +48,7 @@ export async function excelDisaAktar(mappingTemplateId: number, donemId?: number
   a.download = 'puantaj_export.xlsx'
   a.click()
   URL.revokeObjectURL(url)
+
+  const ham = response.headers['x-puantaj-uyari'] as string | undefined
+  return ham ? decodeURIComponent(ham) : null
 }

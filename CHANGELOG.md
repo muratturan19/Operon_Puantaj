@@ -4,6 +4,168 @@
 > Format [Keep a Changelog](https://keepachangelog.com/) ilkelerinden esinlenir, Türkçe.
 > Her girişin *neden*i için `CLAUDE.md`, açık/kapalı roadmap kalemleri için `ROADMAP.md`'ye bakın.
 
+## [Faz 4.9] — 2026-08-25 (kritik: export yanlış sekmede açılıyor + sessiz veri kaybı + 6 haftalık log körlüğü)
+
+Müşteri bildirimi: *"normal puantajları giriyoruz, bazen personel de ekliyoruz, ama Excel
+çıktısı aldığımızda güncel girdiğimiz tabloyu değil bambaşka bir şeyi çıktı alıyor."*
+Canlı tenant DB'si ve müşterinin gerçek master dosyasıyla `/api/excel/export` yeniden
+çalıştırılarak üç ayrı hata doğrulandı.
+
+### Düzeltilenler
+
+- **Export dosyası yanlış sekmede açılıyordu (ASIL ŞİKÂYET).** `copy_worksheet` yeni ay
+  sayfasını workbook'un EN SONUNA — "ÇALIŞAN LİSTESİ"/"servis" yardımcı sekmelerinden de
+  sonraya — ekliyordu; workbook'un aktif sekmesi ise master'dan miras kalan
+  `HAZİRAN 2026 ELDEN` idi. Kullanıcı Ağustos'u export edip dosyayı açtığında karşısına
+  Haziran'ın elden ödeme tablosu geliyor, doğru yazılmış AĞUSTOS sekmesi 17 sekmenin en
+  sağında ekran dışında kalıyordu. **Veri her zaman doğruydu, yanlış olan açılış sekmesiydi.**
+  - `excel_adapter.sayfayi_kronolojik_yerlestir()` — yeni ay kendi kronolojik yerine taşınır
+    (Ağustos artık `HAZİRAN 2026 ELDEN`'den sonra, `ÇALIŞAN LİSTESİ`'nden önce).
+  - `excel_adapter.aktif_sayfa_yap()` — dosya, yazılan en güncel ayın sekmesinde açılır;
+    diğer sekmelerin `tabSelected` bayrağı temizlenir.
+- **Uygulamadan eklenen personelin puantajı sessizce kayboluyordu.** Roster Excel master'dan
+  okunuyor, master ise 3 Temmuz'daki ilk yüklemede donmuştu (en güncel sayfası HAZİRAN, 53
+  kişi); DB'de ise 66 personel vardı. Roster'da satırı olmayan kişi `continue` ile atlanıyordu —
+  ne hata ne uyarı. Ağustos 2026'da RÜMEYSA TEMURAYAK'ın tüm girişleri bu şekilde düşmüştü,
+  24 Ağustos'ta eklenen SELDA ÇÖKMÜŞ de aynı akıbete gidiyordu.
+  - `excel_adapter.roster_satiri_ekle()` — TOPLAM'ın üstüne satır açar; stil ve satır
+    formülleri (Y.TL, HAKEDİŞ, TOPLAM zinciri) son roster satırından `Translator` ile
+    çevrilerek kopyalanır. `openpyxl.insert_rows` formülleri kaydırmadığı için TOPLAM
+    satırındaki `=SUM(E3:E55)` aralıkları da yeni satırı kapsayacak şekilde genişletilir.
+  - Export yanıtına `X-Puantaj-Uyari` başlığı eklendi; grid ve ayarlar ekranları kimler için
+    satır açıldığını (veya açılamadığını) kullanıcıya gösterir.
+- **Export kümülatif değildi.** Üretilen yeni ay sayfaları yalnızca indirilen dosyaya
+  konuyor, master'a hiç yazılmıyordu; her export Haziran'dan sıfırdan türetildiği için
+  müşterinin dosyada yaptığı manuel girdiler (avans/icra/prim/BES) ve personel değişiklikleri
+  her seferinde kayboluyordu. Artık workbook master'ın üzerine atomik olarak yazılır
+  (`_master_kaydet`), ilk üzerine yazmadan önce `*_master.ilk_yukleme.xlsx` yedeği alınır.
+  - Kalıcılığın iki yan etkisi kapatıldı: (1) hiç puantaj girişi olmayan dönemde uygulama
+    kaynak sayılmaz, master'daki tarihî sayfaya (müşterinin Ocak-Haziran verisi) hiç
+    dokunulmaz; (2) girişi kaldırılan kişinin önceki export'tan kalan değeri asılı kalmasın
+    diye dokunulmamış roster satırları da yazma alanları için sıfırlanır — sayfa her export'ta
+    sıfırdan üretiliyormuş gibi deterministik kalır.
+  - `en_guncel_sheet(..., once=)` — bir ayın şablonu kendinden SONRAKİ bir ay olamaz. Master
+    kalıcı olduğu için Ağustos dosyada varken Temmuz export edilirse şablon Ağustos olur,
+    Ağustos'ta işe girmiş personel Temmuz roster'ında belirirdi.
+- **Dönem sırası deterministik değildi.** `disa_aktar`'daki dönem sorgusunda `ORDER BY` yoktu;
+  yeni ay sayfası "o an workbook'ta bulunan en güncel sayfa"dan kopyalandığı için Ağustos'un
+  şablonunun Temmuz mu Haziran mı olacağı DB'nin döndürdüğü sıraya kalmıştı.
+  `ORDER BY yil, ay` eklendi.
+- **Uygulama 6 haftadır tek satır log üretmiyordu.** `alembic/env.py`'deki
+  `fileConfig(config.config_file_name)` çağrısı `disable_existing_loggers=True` varsayılanıyla
+  çalışıyor; `core/tenant_db.py` migration'ları CANLI FastAPI process'inin içinde
+  (`command.upgrade`) çalıştırdığı için ilk tenant girişinde (2026-07-09 14:50) `uvicorn.access`,
+  `uvicorn.error` ve tüm `operon_puantaj.*` logger'ları kalıcı olarak susmuştu. Müşteri hata
+  bildirdiğinde elde hiçbir kayıt yoktu.
+  - `disable_existing_loggers=False` + Dockerfile'a `PYTHONUNBUFFERED=1`.
+  - `core/logging_setup.py` — uygulama logger'ı kendi handler'ını taşır ve root'a yayılmaz;
+    `fileConfig`'in root'u yeniden kurması artık onu etkilemez.
+  - `main.py`'ye kendi erişim logu middleware'i (uvicorn'un access logger'ına bağımlı değil).
+- **Tanımsız `/api/*` yolları 200 + HTML dönüyordu.** SPA catch-all'a düşüyorlardı; frontend
+  JSON beklerken HTML alıyor, hata "anlamsız ekran" olarak yansıyor ve sunucuda iz kalmıyordu.
+  Artık dürüst 404 JSON döner. `/api/health` de gerçek bir uç nokta oldu — Traefik'in sağlık
+  kontrolü uygulama tamamen bozukken bile yeşil kalıyordu.
+
+### Eklenenler
+
+- **`error_log` tablosu + global exception handler.** Yakalanmamış her hata tenant DB'sine
+  traceback'iyle yazılır, kullanıcıya `E-xxxxxxxx` takip kodu gösterilir. Güvenlik ekranına
+  "Sunucu Hataları" sekmesi eklendi (`GET /api/hatalar`, `audit_gorebilir` izniyle) —
+  müşteri kodu söylediğinde kayıt tek hamlede bulunur. DB yazımı best-effort'tur; hata
+  yolunda ikinci bir istisna üretilmez.
+
+### Doğrulama
+
+- `pytest` 33/33 yeşil (4 yeni regresyon testi: kronolojik yerleştirme, aktif sekme,
+  roster satırı ekleme, TOPLAM aralığı genişletme — hepsi gerçek BESIM.xlsx üzerinde).
+- Canlı sunucuda uçtan uca: Ağustos export'u `AĞUSTOS 2026 BANKA` sekmesinde açılıyor,
+  RÜMEYSA TEMURAYAK (satır 56) ve SELDA ÇÖKMÜŞ (satır 57) hesaplanmış değerleriyle yerinde,
+  `TOPLAM` 58. satırda `=SUM(E3:E57)`. İkinci export idempotent (mükerrer satır yok).
+  Tüm dönemler export'unda Temmuz Haziran'dan türetildi, Ağustos'tan değil.
+  Haziran BANKA ve ELDEN sayfaları ilk yüklemeyle **bit-bire-bit aynı** (0 fark).
+- 500 yanıtı `{"detail": "...", "istek_id": "E-xxxxxxxx"}` döndürüyor, kayıt DB'de okunabiliyor.
+
+## [Faz 4.8] — 2026-07-06 (kritik: maaş zammı geçmiş bordroyu bozuyordu)
+
+### Eklenenler
+
+- **Maaş geçmişi (etkin-tarihli zam mekanizması)** — kullanıcı sorusu: "yıllar boyunca
+  sorunsuz çalışması için düşünmeliyiz... maaşlara zam gelince onu sisteme nasıl alacağız?"
+  Kod taraması gerçek bir açık ortaya çıkardı: `Personel.maas` tek bir "güncel" değerdi, hiç
+  geçmiş tutmuyordu — hem grid özeti (`ozet()`) hem Excel export, hangi GEÇMİŞ dönem
+  hesaplanıyor olursa olsun her zaman BUGÜNKÜ maaşı okuyordu. Birine zam yapılınca geçmiş
+  ayların bordrosu da (görünüşte) sessizce yeni maaşla yeniden hesaplanıyordu — N.G için
+  Faz 4'te çözülen sorunun birebir aynısı, ama maaş hiç ele alınmamıştı.
+  - Yeni tablo `PersonelMaasGecmisi` (personel_id, yil, ay, maas) — **etkin-tarihli/carry-forward**
+    semantiği: bir kayıt, girildiği (yıl,ay)'dan itibaren bir SONRAKİ kayda kadar geçerli
+    (N.G'nin `PersonelDonemAyar`'ından farklı — o SADECE o dönem için bir istisnaydı).
+  - `personel_filtre.efektif_maas(session, personel_id, donem)` — hedef dönemden önceki/o
+    döneme ait en son kaydı bulur; hiç kayıt yoksa `Personel.maas`'a düşer.
+  - `POST /api/personel/{id}/zam` — ilk kez zam giriliyorsa, o ana kadarki maaşı geçmiş
+    dönemler için sabitleyen bir "taban" kayıt da otomatik ekler (işe giriş tarihine, yoksa
+    2000-01'e anchor'lanır) — aksi halde geçmiş dönemler de yanlışlıkla yeni maaşı görürdü.
+    Aynı (yıl,ay) için tekrar girilirse üzerine yazar (düzeltme), append-only ama duplicate yok.
+  - `PersonelUpdate`'ten `maas` alanı BİLİNÇLİ OLARAK kaldırıldı — artık TÜM maaş değişiklikleri
+    `/zam` üzerinden, etkin dönem belirtilerek yapılmak zorunda.
+  - `ozet()` ve `excel.py::disa_aktar()` artık `personel.maas` yerine `efektif_maas()` kullanıyor.
+  - **Yan bulgu, aynı sınıf hata:** Excel export'ta MAAŞ kolonu da (N.G'deki gibi) müşterinin
+    kendi formülleri için roster'da referans — zam girilince bu kolon da güncellenmezse
+    müşterinin kendi hesapları eski maaşla yanlış sonuç üretmeye devam ederdi. N.G'nin
+    `ng_kolon` yazma mantığına birebir aynı desenle `maas_kolon` yazma mantığı eklendi.
+  - Frontend: `EmployeesPage.tsx`'te maaş artık salt-okunur; "Zam Gir" (etkin ay/yıl + yeni
+    maaş) ve "Geçmiş" (maaş tarihçesi) butonları eklendi.
+  Canlı API'de uçtan uca doğrulandı: geçmiş dönem (Haziran, izin_tl=800) zam sonrası
+  DEĞİŞMEDİ; yeni dönem (Ağustos) doğru şekilde yeni maaşı kullandı (izin_tl 800→967,74,
+  oran tam maaş artışıyla uyumlu); aynı ayı tekrar girme düzeltme olarak çalıştı, duplicate
+  oluşmadı; audit log'a "zam" aksiyonuyla kaydedildi. Tarayıcıda uçtan uca doğrulandı, sıfır
+  konsol hatası. `pytest` 29/29 yeşil (DB'ye bağımlı yeni kod, mevcut codebase pattern'i
+  gereği pytest yerine canlı API ile doğrulandı — `test_excel_adapter.py`/Faz 3-4 aynı yöntemi kullanıyor).
+
+## [Faz 4.7] — 2026-07-06 (yıl geçişi riski — kullanıcı sorusu üzerine bulundu)
+
+### Eklenenler
+
+- **Yıl geçişi (ör. 2026→2027) resmi tatil uyarısı** — kullanıcı sorusu: "bu yıl bitince 2027'ye
+  geçince ne olacak?" Kod taraması: dönem seçici, N.G hesabı ve Excel sheet ayrıştırma/oluşturma
+  tamamen dinamik (yıl hardcode değil) — sorunsuz. TEK gerçek risk: resmi tatiller
+  (`VARSAYILAN_TATIL_2026`, `alembic/versions/81f9c9647f37_seed_data.py`) kuruluşta BİR KEZ
+  seed ediliyor; özellikle dini bayramlar (Ramazan/Kurban) her yıl kaydığı için otomatik
+  hesaplanamaz — biri Tatiller ekranından elle girmezse, yeni yılın resmi tatilinde çalışılan FM
+  sessizce hafta içi oranıyla hesaplanır. Çözüm: `AttendanceGridPage.tsx`'e, seçilen dönemin
+  yılında hiç tatil kaydı yoksa `tatil_yonetebilir` iznine sahip kullanıcılara bir uyarı
+  banner'ı eklendi ("Tatilleri Gir" butonuyla doğrudan Tatiller dialogunu açıyor). Gerçek 2027
+  dönemi oluşturulup tarayıcıda doğrulandı (uyarı çıktı, buton dialogu doğru açtı), sonra test
+  verisi temizlendi. `pytest` 29/29 yeşil.
+
+## [Faz 4.6] — 2026-07-06 (Emine geri bildirimi — şifre değiştirme ve Güvenlik sayfası kafa karışıklığı)
+
+### Eklenenler
+
+- **Kendi şifresini değiştirme** — kullanıcı geri bildirimi: "Portal'dan üretilen şifre çok
+  karmaşık ve kendi şifremi nereden değiştireceğimi göremiyorum." Backend zaten kendi şifresini
+  değiştirmeye izin veriyordu (`POST /api/kullanicilar/{id}/parola-degistir`, `KULLANICI_YONETEBILIR`
+  izni yalnızca BAŞKASININ şifresini değiştirirken gerekiyordu) — sadece frontend UI'ı yoktu.
+  `AppLayout.tsx`'e, tüm rollere (Admin/Kullanıcı/GM fark etmeksizin) her sayfada görünen bir
+  "Şifremi Değiştir" butonu + dialog eklendi (yeni şifre + tekrar doğrulama, en az 6 karakter,
+  eşleşme kontrolü). Ayrı bir izin gerektirmiyor, `kullanici_yonetebilir` sayfasına (Kullanıcılar)
+  gitmeye gerek yok.
+- **Sayfa başına açıklama metni** — kullanıcı geri bildirimi: "Güvenlik sayfası adı itibarıyla
+  yanlış mesaj veriyor, kullanıcılar işlevini anlamıyor." Personel/Çalışma Tipleri/Kullanıcılar/
+  Excel Aktarım/Şirket Ayarları/Güvenlik sayfalarının hepsine başlığın altına kısa bir açıklama
+  eklendi. Güvenlik sayfasınınki özellikle netleştiriyor: "Bu bir hesap/şifre ayarı sayfası
+  DEĞİLDİR... Kendi şifrenizi değiştirmek için sağ üstteki 'Şifremi Değiştir' butonunu kullanın."
+  (Puantaj/grid ekranına bilinçli olarak dokunulmadı — zaten önceden dikey alan sorunu yaşanmış
+  en yoğun kullanılan ekran, gereksiz yükseklik eklenmedi.)
+
+### Düzeltilenler
+
+- **Yan bulgu, bu işle ilgisiz:** backend süreci, diskteki `CalismaTipi` modelindeki
+  `resmi_tatil_fm_orani`/`hafta_tatili_gunleri` alanlarını (Faz 3'te eklenmiş) yansıtmayan ESKİ
+  bir kodla çalışıyordu — `/api/calisma-tipleri` bu alanları hiç dönmüyordu, bu da Çalışma
+  Tipleri sayfasında `t.hafta_tatili_gunleri.includes(...)` çağrısında `undefined` hatasıyla
+  komple sayfa çökmesine yol açıyordu. Backend'in temiz yeniden başlatılmasıyla düzeltildi
+  (klasik "uvicorn --reload eski kodu sunmaya devam ediyor" durumu).
+
 ## [Faz 4.5] — 2026-07-06 (dördüncü tur — N.G kolonu güncellenmiyordu)
 
 ### Düzeltilenler

@@ -9,6 +9,8 @@ RUN npm run build
 
 # Stage 2: Python backend (gömülü frontend build'ini de servis eder)
 FROM python:3.12-slim
+# Log satirlari docker logs'a ANINDA dussun (blok-buffer'da takilip kaybolmasin)
+ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt

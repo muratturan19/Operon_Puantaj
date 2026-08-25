@@ -38,6 +38,7 @@ export function AttendanceGridPage() {
   const [girisler, setGirisler] = useState<PuantajGirisi[]>([])
   const [ozetListesi, setOzetListesi] = useState<PersonelOzet[]>([])
   const [tatiller, setTatiller] = useState<Tatil[]>([])
+  const [exportUyarisi, setExportUyarisi] = useState<string | null>(null)
   const [tatilDialogAcik, setTatilDialogAcik] = useState(false)
   const [mappingSablonId, setMappingSablonId] = useState<number | null>(null)
 
@@ -173,7 +174,9 @@ export function AttendanceGridPage() {
           <Button
             variant="outlined"
             size="small"
-            onClick={() => excelDisaAktar(mappingSablonId, secilenDonem.id)}
+            onClick={async () => {
+              setExportUyarisi(await excelDisaAktar(mappingSablonId, secilenDonem.id))
+            }}
           >
             Excel'e Aktar
           </Button>
@@ -194,10 +197,35 @@ export function AttendanceGridPage() {
         )}
       </Stack>
 
+      {exportUyarisi && (
+        <Alert severity="warning" onClose={() => setExportUyarisi(null)} sx={{ mb: 2 }}>
+          {exportUyarisi}
+        </Alert>
+      )}
+
       {!izniVar('audit_gorebilir') && (
         <Alert severity="info" variant="outlined" sx={{ mb: 2, py: 0 }}>
           Bu ekrandaki tüm işaretlemeler ve değişiklikler, kim tarafından ve ne zaman yapıldığı
           bilgisiyle birlikte kayıt altına alınmaktadır.
+        </Alert>
+      )}
+
+      {/* Yıl geçişi riski (ör. 2026→2027): resmi tatiller (özellikle dini bayramlar) her yıl
+          elle girilmek zorunda — otomatik hesaplanamaz. Girilmezse o yılın resmi tatilinde
+          çalışılan FM, sessizce hafta içi oranıyla hesaplanır. */}
+      {izniVar('tatil_yonetebilir') && !tatiller.some((t) => new Date(t.tarih).getFullYear() === secilenDonem.yil) && (
+        <Alert
+          severity="warning"
+          variant="outlined"
+          sx={{ mb: 2, py: 0 }}
+          action={
+            <Button color="warning" size="small" onClick={() => setTatilDialogAcik(true)}>
+              Tatilleri Gir
+            </Button>
+          }
+        >
+          {secilenDonem.yil} yılı için hiç resmi tatil tanımlanmamış — bu yılın resmi tatillerinde
+          çalışılan fazla mesai, tatil tanımlanana kadar yanlışlıkla hafta içi oranıyla hesaplanır.
         </Alert>
       )}
 

@@ -12,15 +12,20 @@ tüm kolon/satır bilgisi bir `ExcelMappingConfig`'ten gelir. `Puantaj.html`'in
 """
 from __future__ import annotations
 
+import logging
 import re
+from copy import copy
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from openpyxl import load_workbook
+from openpyxl.formula.translate import Translator
 from openpyxl.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.models.excel_mapping_schema import ExcelMappingConfig, ExcelSheetMapping
+
+logger = logging.getLogger("operon_puantaj.excel")
 
 TR_AYLAR = [
     "OCAK", "ŞUBAT", "MART", "NİSAN", "MAYIS", "HAZİRAN",
@@ -72,17 +77,33 @@ def list_matching_sheets(wb: Workbook, sheet_mapping: ExcelSheetMapping) -> list
     ]
 
 
-def en_guncel_sheet(wb: Workbook, sheet_mapping: ExcelSheetMapping) -> Optional[Worksheet]:
+def en_guncel_sheet(
+    wb: Workbook,
+    sheet_mapping: ExcelSheetMapping,
+    once: Optional[tuple[int, int]] = None,
+) -> Optional[Worksheet]:
     """Eşleşen sayfalar arasından en güncel (yıl, ay) olanı — yeni bir ay için
-    şablon olarak kullanılır (bkz. yeni_ay_sayfasi_olustur)."""
+    şablon olarak kullanılır (bkz. yeni_ay_sayfasi_olustur).
+
+    `once` verilirse (yeni ayın dönemi), o aydan ÖNCEKİ en güncel sayfa tercih
+    edilir: bir ayın şablonu kendinden sonraki bir ay olmamalı. 2026-08-25'ten
+    beri export ürettiği sayfaları master'a kalıcı yazdığı için bu mümkün hale
+    geldi — Ağustos dosyada varken Temmuz export edilirse şablon Ağustos olur,
+    Ağustos'ta işe girmiş personel Temmuz roster'ında belirirdi. Öncesinde hiç
+    sayfa yoksa (ilk ay) en güncele düşülür.
+    """
     en_guncel: Optional[tuple[Worksheet, tuple[int, int]]] = None
+    once_en_guncel: Optional[tuple[Worksheet, tuple[int, int]]] = None
     for ws in list_matching_sheets(wb, sheet_mapping):
         donem = parse_sheet_donem(ws.title)
         if donem is None:
             continue
         if en_guncel is None or donem > en_guncel[1]:
             en_guncel = (ws, donem)
-    return en_guncel[0] if en_guncel else None
+        if once is not None and donem < once and (once_en_guncel is None or donem > once_en_guncel[1]):
+            once_en_guncel = (ws, donem)
+    secilen = once_en_guncel or en_guncel
+    return secilen[0] if secilen else None
 
 
 def yeni_ay_sayfasi_olustur(
@@ -230,3 +251,88 @@ def write_export(
                     hedef_hucre.value = f"={formul}"
                 else:
                     hedef_hucre.value = None
+
+
+def sayfayi_kronolojik_yerlestir(wb: Workbook, ws: Worksheet, donem: tuple[int, int]) -> None:
+    """Yeni oluşturulan ay sayfasını kendi kronolojik yerine taşır.
+
+    Bug (2026-08-25, müşteri şikâyeti): `copy_worksheet` sayfayı workbook'un EN
+    SONUNA, "ÇALIŞAN LİSTESİ"/"servis" gibi yardımcı sekmelerden de sonra
+    ekliyordu. 17 sekmelik dosyada güncel ay en sağda, ekran dışında kalıyordu.
+    """
+    hedef_index: Optional[int] = None
+    for i, sayfa in enumerate(wb.worksheets):
+        if sayfa is ws:
+            continue
+        sayfa_donemi = parse_sheet_donem(sayfa.title)
+        if sayfa_donemi is not None and sayfa_donemi < donem:
+            hedef_index = i
+    if hedef_index is None:
+        return
+    mevcut = wb.index(ws)
+    hedef = hedef_index + 1 if hedef_index < mevcut else hedef_index
+    if hedef != mevcut:
+        wb.move_sheet(ws, offset=hedef - mevcut)
+
+
+def aktif_sayfa_yap(wb: Workbook, ws: Worksheet) -> None:
+    """Dosya açıldığında bu sayfa görünsün.
+
+    Bug (2026-08-25, ASIL ŞİKÂYET): export edilen dosyanın aktif sekmesi
+    master'dan miras kalan "HAZİRAN 2026 ELDEN" idi. Kullanıcı Ağustos'u export
+    edip dosyayı açtığında karşısına Haziran'ın elden ödeme tablosu geliyordu —
+    "girdiğimiz tabloyu değil bambaşka bir şeyi çıktı alıyor" geri bildirimi
+    birebir bu. Veri doğru yazılıyordu, yanlış olan açılış sekmesiydi.
+    """
+    wb.active = wb.index(ws)
+    for sayfa in wb.worksheets:
+        sayfa.sheet_view.tabSelected = sayfa is ws
+
+
+def _toplam_araliklarini_genislet(ws: Worksheet, toplam_row: int, eski_son: int, yeni_son: int) -> None:
+    """TOPLAM satırındaki `=SUM(E3:E55)` gibi aralıkların bitişini yeni satıra taşır.
+
+    openpyxl `insert_rows` formülleri OTOMATİK kaydırmaz; bu yapılmazsa eklenen
+    personelin satırı toplama dahil olmaz ve TOPLAM sessizce eksik çıkar.
+    """
+    desen = re.compile(r"(:\$?[A-Z]{1,3}\$?)" + str(eski_son) + r"(?![0-9])")
+    for cell in ws[toplam_row]:
+        if isinstance(cell.value, str) and cell.value.startswith("="):
+            yeni_formul = desen.sub(lambda m: f"{m.group(1)}{yeni_son}", cell.value)
+            if yeni_formul != cell.value:
+                cell.value = yeni_formul
+
+
+def roster_satiri_ekle(ws: Worksheet, mapping: ExcelMappingConfig, degerler: dict[str, Any]) -> Optional[int]:
+    """Excel roster'ında satırı olmayan personel için TOPLAM'ın hemen üstüne satır açar.
+
+    Bug (2026-08-25, SESSİZ VERİ KAYBI): uygulamadan eklenen personel Excel
+    master'ın roster'ında bulunmadığı için export'ta `continue` ile atlanıyordu —
+    ne hata ne uyarı. Girilen puantaj hiçbir yere yazılmıyordu (ör. RÜMEYSA
+    TEMURAYAK, Ağustos 2026). Artık satır açılıyor: stil ve formüller son roster
+    satırından kopyalanır, TOPLAM aralıkları genişletilir.
+    """
+    sm = mapping.sheet_mapping
+    toplam_row = find_toplam_row(ws, sm)
+    referans_row = toplam_row - 1
+    if referans_row < sm.baslangic_satir:
+        logger.warning("Roster boş, satır eklenemedi: %s / %r", ws.title, degerler.get("ad_soyad"))
+        return None
+
+    ws.insert_rows(toplam_row)
+    yeni_row = toplam_row
+
+    for cell in ws[referans_row]:
+        hedef = ws.cell(row=yeni_row, column=cell.column)
+        hedef._style = copy(cell._style)
+        if isinstance(cell.value, str) and cell.value.startswith("="):
+            hedef.value = Translator(cell.value, origin=cell.coordinate).translate_formula(hedef.coordinate)
+
+    ws[f"{sm.kimlik_kolon_harfi}{yeni_row}"] = degerler.get("ad_soyad")
+    for okuma in sm.okuma_alanlari:
+        if okuma.kolon_harfi and okuma.hedef_alan != "ad_soyad" and okuma.hedef_alan in degerler:
+            ws[f"{okuma.kolon_harfi}{yeni_row}"] = degerler[okuma.hedef_alan]
+
+    _toplam_araliklarini_genislet(ws, toplam_row + 1, eski_son=referans_row, yeni_son=yeni_row)
+    logger.info("Roster satırı eklendi: %s / %r -> satır %s", ws.title, degerler.get("ad_soyad"), yeni_row)
+    return yeni_row
