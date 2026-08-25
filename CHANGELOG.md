@@ -9,6 +9,37 @@
 > birlikte güncellenir: `backend/app/core/version.py` ve `frontend/src/config/surum.ts`.
 > Canlıdaki sürüm `GET /api/surum` ile sorulabilir, arayüzde sağ üstteki rozette görünür.
 
+## [4.9.2] — 2026-08-25 (yarım gün izin)
+
+Müşteri geri bildirimi: *"yarım gün izin verirken 3 deseler az, 4 deseler fazla oluyor."*
+Günlük çalışma 7,5 saat olduğu için yarım gün 3,75 saattir; sağ tık menüsünde elle yazmak
+zahmetli ve yuvarlama hatasına açıktı.
+
+### Eklenenler
+
+- **Sağ tık menüsüne "Yarım gün" butonu.** İzin saatini tek tıkla yarım güne ayarlar ve o
+  değer girilmişse butonu dolu gösterir. Altındaki satır karşılığını yazar
+  ("Yarım gün = 3,75 saat (günlük 7,5 saat)").
+- Değer **sabit 3,75 DEĞİL**, personelin Çalışma Tipi'ndeki `gunluk_saat`'in yarısı
+  (`utils/saat.ts::yarimGunSaati`) — 8 saatlik bir tip tanımlanırsa yarım gün kendiliğinden
+  4 saat olur, kod değişmez.
+- İzin ve FM alanlarının adımı 0,5'ten **0,25'e** indirildi; 3,75 önceden HTML doğrulamasına
+  takılan bir ara değerdi.
+- Grid hücresinde yarım gün **"½"** olarak görünür — 34 piksellik hücreye "3,75i" sığmıyordu.
+  Diğer saat değerleri de artık Türkçe ondalık ayırıcıyla ("3,5i"), hücrenin üzerine gelince
+  tam metin çıkıyor ("3,75 saat izin").
+
+### Hesaba etkisi
+
+Yok — `izin_saat` zaten ondalık (`float`) taşıyordu, backend'de tek satır değişmedi. 7,5
+saatlik günde 3,75 saat izin, İZİN.TL üzerinden tam olarak yarım günlük ücret keser; Ç.GÜN'e
+dokunmaz. Bu davranış artık testle sabitlendi.
+
+### Doğrulama
+
+- `pytest` 47/47 yeşil (yeni test: 30.000 ₺ / 30 N.G'de yarım gün izin, gün maaşının tam
+  yarısını keser — Ç.GÜN 30 kalır, hakediş 29.500 ₺).
+
 ## [4.9.1] — 2026-08-25 (Ç.GÜN ay bitmeden tam ay yazıyordu; ayrılmış personel sayfada duruyordu)
 
 Müşteri geri bildirimi (aynı gün, 4.9.0'dan sonra): *"sarı olan sütun rast gele dolmuş"*,

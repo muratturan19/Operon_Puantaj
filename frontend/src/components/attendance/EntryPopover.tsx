@@ -11,6 +11,7 @@ import {
   Typography,
 } from '@mui/material'
 import type { GunDurumu, PuantajGirisi } from '../../services/types'
+import { VARSAYILAN_GUNLUK_SAAT, saatMetni, yarimGunSaati } from '../../utils/saat'
 
 interface Props {
   anchorEl: HTMLElement | null
@@ -18,6 +19,7 @@ interface Props {
   personelAdi: string
   tarihEtiketi: string
   x2: boolean
+  gunlukSaat: number
   mevcutGiris: PuantajGirisi | undefined
   onKaydet: (gunDurumu: GunDurumu, izinSaat: number, fmSaat: number) => void
   onTemizle: () => void
@@ -35,6 +37,7 @@ export function EntryPopover({
   personelAdi,
   tarihEtiketi,
   x2,
+  gunlukSaat,
   mevcutGiris,
   onKaydet,
   onTemizle,
@@ -49,6 +52,7 @@ export function EntryPopover({
 
   const acik = Boolean(anchorEl)
   const saatlikDevreDisi = tamGun !== null
+  const yarimGun = yarimGunSaati(gunlukSaat || VARSAYILAN_GUNLUK_SAAT)
 
   return (
     <Popover
@@ -77,23 +81,38 @@ export function EntryPopover({
             ))}
           </ToggleButtonGroup>
 
-          <TextField
-            label="İzin (saat)"
-            type="number"
-            size="small"
-            value={izin}
-            disabled={saatlikDevreDisi}
-            inputProps={{ min: 0, step: 0.5 }}
-            onChange={(e) => setIzin(e.target.value)}
-            fullWidth
-          />
+          <Stack direction="row" spacing={1} alignItems="flex-start">
+            <TextField
+              label="İzin (saat)"
+              type="number"
+              size="small"
+              value={izin}
+              disabled={saatlikDevreDisi}
+              // step 0,25 — yarım gün 3,75 saat, 0,5'lik adımda geçersiz sayılırdı
+              inputProps={{ min: 0, step: 0.25 }}
+              onChange={(e) => setIzin(e.target.value)}
+              fullWidth
+            />
+            <Button
+              size="small"
+              variant={parseFloat(izin) === yarimGun ? 'contained' : 'outlined'}
+              disabled={saatlikDevreDisi}
+              onClick={() => setIzin(String(yarimGun))}
+              sx={{ whiteSpace: 'nowrap', mt: 0.25, minWidth: 104 }}
+            >
+              Yarım gün
+            </Button>
+          </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: -0.5 }}>
+            Yarım gün = {saatMetni(yarimGun)} saat (günlük {saatMetni(gunlukSaat || VARSAYILAN_GUNLUK_SAAT)} saat)
+          </Typography>
           <TextField
             label="Fazla mesai (saat)"
             type="number"
             size="small"
             value={fm}
             disabled={saatlikDevreDisi}
-            inputProps={{ min: 0, step: 0.5 }}
+            inputProps={{ min: 0, step: 0.25 }}
             onChange={(e) => setFm(e.target.value)}
             fullWidth
           />

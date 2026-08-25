@@ -1,20 +1,24 @@
 import { Box } from '@mui/material'
 import type { PuantajGirisi } from '../../services/types'
 import { GRID_CIZGI_RENGI, PAZAR_TATIL_HUCRE_RENGI } from '../../utils/date'
+import { VARSAYILAN_GUNLUK_SAAT, saatMetni, yarimGunMu } from '../../utils/saat'
 
 interface Props {
   tatilMi: boolean
   pazarMi: boolean
   devreDisiMi?: boolean // personel bu gün henüz işe girmemiş / zaten ayrılmış
+  gunlukSaat?: number
   giris: PuantajGirisi | undefined
   onSolTik: () => void
   onSagTik: (e: React.MouseEvent<HTMLElement>) => void
 }
 
-export function DayCell({ tatilMi, pazarMi, devreDisiMi, giris, onSolTik, onSagTik }: Props) {
+export function DayCell({ tatilMi, pazarMi, devreDisiMi, gunlukSaat, giris, onSolTik, onSagTik }: Props) {
   const gunDurumu = giris?.gun_durumu ?? null
   const izin = giris?.izin_saat || 0
   const fm = giris?.fm_saat || 0
+  // 34px'lik hücreye "3,75i" sığmıyor — yarım gün kısaca "½" gösterilir.
+  const izinMetni = yarimGunMu(izin, gunlukSaat ?? VARSAYILAN_GUNLUK_SAAT) ? '½' : saatMetni(izin)
 
   let bgcolor: string = tatilMi || pazarMi ? PAZAR_TATIL_HUCRE_RENGI : 'transparent'
   let renk: string | undefined
@@ -35,15 +39,15 @@ export function DayCell({ tatilMi, pazarMi, devreDisiMi, giris, onSolTik, onSagT
   } else if (izin && fm) {
     bgcolor = 'secondary.light'
     renk = 'white'
-    icerik = `${izin}i/${fm}`
+    icerik = `${izinMetni}i/${saatMetni(fm)}`
   } else if (izin) {
     bgcolor = 'error.light'
     renk = 'white'
-    icerik = `${izin}i`
+    icerik = `${izinMetni}i`
   } else if (fm) {
     bgcolor = 'info.light'
     renk = 'white'
-    icerik = `+${fm}`
+    icerik = `+${saatMetni(fm)}`
   }
 
   return (
@@ -57,7 +61,9 @@ export function DayCell({ tatilMi, pazarMi, devreDisiMi, giris, onSolTik, onSagT
       title={
         devreDisiMi
           ? 'Bu tarihte henüz işe girmemiş / işten ayrılmış'
-          : `Sol tık: gelmedi · Sağ tık: izin/FM/yıllık izin/raporlu${pazarMi || tatilMi ? ' (bu gün FM ×2)' : ''}`
+          : izin
+            ? `${saatMetni(izin)} saat izin${fm ? ` · ${saatMetni(fm)} saat FM` : ''}`
+            : `Sol tık: gelmedi · Sağ tık: izin/FM/yarım gün/yıllık izin/raporlu${pazarMi || tatilMi ? ' (bu gün FM ×2)' : ''}`
       }
       sx={{
         width: 34,

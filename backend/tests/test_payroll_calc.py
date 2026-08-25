@@ -292,3 +292,20 @@ def test_gelecek_gun_devamsizlikla_birlikte():
 def test_gelecek_gun_cgun_u_negatife_dusuremez():
     sonuc = hesapla(maas=31000, ng=31, gunluk_saat=7.5, girisler=[], tatiller=set(), gelecek_gun=99)
     assert sonuc.cgun == 0
+
+
+def test_yarim_gun_izin_tam_yarim_gunluk_ucret_keser():
+    """Müşteri geri bildirimi (2026-08-25): "yarım gün için 3 deseler az, 4 deseler
+    fazla oluyor" — 7,5 saatlik günde yarım gün 3,75 saattir ve tam olarak yarım
+    günlük ücrete denk gelmelidir. Arayüzdeki "Yarım gün" butonu bu değeri yazar."""
+    maas, ng, gunluk_saat = 30000.0, 30, 7.5
+    sonuc = hesapla(
+        maas=maas, ng=ng, gunluk_saat=gunluk_saat,
+        girisler=[GunlukGiris(tarih=date(2026, 8, 10), izin_saat=gunluk_saat / 2)],
+        tatiller=set(),
+    )
+    gun_maasi = maas / ng
+    assert sonuc.izin_saat == 3.75
+    assert sonuc.izin_tl == pytest.approx(gun_maasi / 2)
+    assert sonuc.cgun == ng  # izin saati Ç.GÜN'ü düşürmez, yalnızca ücretten keser
+    assert sonuc.hakedis == pytest.approx(maas - gun_maasi / 2)

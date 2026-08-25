@@ -4,6 +4,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import type { CalismaTipi, Donem, GunDurumu, Personel, PersonelOzet, PuantajGirisi, Tatil } from '../../services/types'
 import { GRID_CIZGI_RENGI, TATIL_BASLIK_RENGI, TR_AYLAR, TR_GUN_KISA, gunSayisi, haftaTatiliMi, ymd } from '../../utils/date'
 import { donemdeCalisiyorMu, gunCalisiyorMu } from '../../utils/personel'
+import { VARSAYILAN_GUNLUK_SAAT } from '../../utils/saat'
 import { DayCell } from './DayCell'
 import { EntryPopover } from './EntryPopover'
 
@@ -289,6 +290,7 @@ export function PuantajGrid({
                       tatilMi={tatil}
                       pazarMi={pazar}
                       devreDisiMi={devreDisi}
+                      gunlukSaat={tip?.gunluk_saat}
                       giris={giris}
                       onSolTik={() => onGunToggle(p.id, tarih, giris)}
                       onSagTik={(e) => {
@@ -340,6 +342,7 @@ export function PuantajGrid({
               aktifHucre.gun,
             ) || tatilSet.has(ymd(donem.yil, donem.ay, aktifHucre.gun))
           }
+          gunlukSaat={tipMap.get(aktifHucre.calismaTipiId)?.gunluk_saat ?? VARSAYILAN_GUNLUK_SAAT}
           mevcutGiris={girisMap.get(`${aktifHucre.personelId}|${aktifHucre.tarih}`)}
           onKaydet={(gunDurumu, izinSaat, fmSaat) =>
             onGunKaydet(aktifHucre.personelId, aktifHucre.tarih, gunDurumu, izinSaat, fmSaat)
