@@ -12,6 +12,7 @@ kopyasına yazılır, orijinal asla üzerine yazılarak bozulmaz.
 """
 from __future__ import annotations
 
+import calendar
 import io
 import logging
 import os
@@ -43,6 +44,7 @@ from app.services.excel_adapter import (
     TR_AYLAR,
     RosterKaydi,
     aktif_sayfa_yap,
+    roster_satirlarini_sil,
     en_guncel_sheet,
     list_matching_sheets,
     open_workbook,
@@ -55,7 +57,15 @@ from app.services.excel_adapter import (
     yeni_ay_sayfasi_olustur,
 )
 from app.services.payroll_calc import GunlukGiris, hesapla
-from app.services.personel_filtre import efektif_maas, efektif_ng, ise_disi_gun_sayisi
+from app.services.personel_filtre import (
+    bugun_tr,
+    donemde_calisiyor_mu,
+    efektif_maas,
+    efektif_ng,
+    gelecek_gun_sayisi,
+    ise_disi_gun_sayisi,
+    sayilan_girisler,
+)
 
 logger = logging.getLogger("operon_puantaj.excel")
 
@@ -298,8 +308,10 @@ def disa_aktar(
 
     yazilan_sayfalar: list = []
     eklenen_personel: list[str] = []
+    silinen_personel: list[str] = []
     yazilamayan_personel: list[str] = []
     bos_donemler: list[str] = []
+    tamamlanmamis_donemler: list[str] = []
 
     for donem in donemler:
         ay_adi = f"{TR_AYLAR[donem.ay - 1]} {donem.yil}"
@@ -346,11 +358,29 @@ def disa_aktar(
         sonuc_by_row: dict[int, dict] = {}
         dokunulan_satirlar: set[int] = set()
 
+        personel_by_ad = {
+            p.ad_soyad: p
+            for p in session.exec(select(Personel).where(Personel.sirket_id == current_user.sirket_id)).all()
+        }
+
+        # Kullanıcı kararı (2026-08-25): dönem başlamadan ÖNCE işten ayrılmış
+        # personel o ayın sayfasında hiç görünmemeli. Önceden satırı duruyor ama
+        # hiç girişi olmadığı için Ç.GÜN'ü boş kalıyordu — müşteri geri bildirimi:
+        # "sarı olan sütun rast gele dolmuş". Ay İÇİNDE ayrılan silinmez
+        # (donemde_calisiyor_mu, 2026-07-04 kararı: çıktığı ayın sonuna kadar kalır).
+        silinecek_satirlar: set[int] = set()
+        for kayit in read_roster(ws, mapping):
+            personel_obj = personel_by_ad.get(kayit.alanlar.get("ad_soyad"))
+            if personel_obj is not None and not donemde_calisiyor_mu(personel_obj, donem.yil, donem.ay):
+                silinecek_satirlar.add(kayit.excel_satir)
+                silinen_personel.append(f"{personel_obj.ad_soyad} ({ay_adi})")
+        roster_satirlarini_sil(ws, mapping, silinecek_satirlar)
+
         # Satır numarası kişi bazında SABİT değildir — biri Ocak'ta 5. satırdaysa
-        # Haziran'da 3. satırda olabilir (personel devri, roster sırası kayar).
-        # Bu yüzden `Personel.excel_kaynak_satir` (en son import'un satırı) yerine,
-        # bu dönemin KENDİ sayfasını tazeden okuyup ad-soyad eşleşmesiyle doğru
-        # satırı buluyoruz.
+        # Haziran'da 3. satırda olabilir (personel devri, roster sırası kayar) ve
+        # yukarıdaki silme de numaraları kaydırır. Bu yüzden `Personel.excel_kaynak_satir`
+        # (en son import'un satırı) yerine, bu dönemin KENDİ sayfasını tazeden
+        # okuyup ad-soyad eşleşmesiyle doğru satırı buluyoruz.
         satir_by_ad_soyad = {
             kayit.alanlar.get("ad_soyad"): kayit.excel_satir
             for kayit in read_roster(ws, mapping)
@@ -399,12 +429,8 @@ def disa_aktar(
             None,
         )
         if ng_kolon or maas_kolon:
-            aktif_personel_by_ad = {
-                p.ad_soyad: p
-                for p in session.exec(select(Personel).where(Personel.sirket_id == current_user.sirket_id)).all()
-            }
             for ad_soyad, satir in satir_by_ad_soyad.items():
-                personel_obj = aktif_personel_by_ad.get(ad_soyad)
+                personel_obj = personel_by_ad.get(ad_soyad)
                 if personel_obj is None:
                     continue
                 if ng_kolon:
@@ -427,16 +453,22 @@ def disa_aktar(
                     tarih=g.tarih, gun_durumu=g.gun_durumu,
                     izin_saat=g.izin_saat, fm_saat=g.fm_saat,
                 )
-                for g in session.exec(
-                    select(PuantajGirisi).where(
-                        PuantajGirisi.donem_id == donem.id, PuantajGirisi.personel_id == personel_id
-                    )
-                ).all()
+                # Gelecek tarihli girişler elenir — `gelecek_gun` o günleri zaten
+                # Ç.GÜN'den düşüyor, ikisi birden çift kesinti olurdu.
+                for g in sayilan_girisler(
+                    session.exec(
+                        select(PuantajGirisi).where(
+                            PuantajGirisi.donem_id == donem.id, PuantajGirisi.personel_id == personel_id
+                        )
+                    ).all(),
+                    donem.yil, donem.ay,
+                )
             ]
             sonuc = hesapla(
                 maas=efektif_maas(session, personel.id, donem), ng=efektif_ng(session, personel.id, donem), gunluk_saat=gunluk_saat,
                 girisler=girisler, tatiller=tatiller,
                 ise_disi_gun=ise_disi_gun_sayisi(personel, donem.yil, donem.ay),
+                gelecek_gun=gelecek_gun_sayisi(personel, donem.yil, donem.ay),
                 raporlu_politikasi=sirket.raporlu_politikasi if sirket else "hic_odeme",
                 raporlu_esik_gun=sirket.raporlu_esik_gun if sirket else 0,
                 hafta_ici_fm_orani=tip.hafta_ici_fm_orani if tip else 1.5,
@@ -458,6 +490,11 @@ def disa_aktar(
         sifirlanacak = {s for s in satir_by_ad_soyad.values() if s is not None} - dokunulan_satirlar
         write_export(ws, mapping, sonuc_by_row, dokunulan_satirlar | sifirlanacak)
         yazilan_sayfalar.append(ws)
+        bugun = bugun_tr()
+        if (bugun.year, bugun.month) <= (donem.yil, donem.ay):
+            son_gun = calendar.monthrange(donem.yil, donem.ay)[1]
+            gecen = bugun.day if (bugun.year, bugun.month) == (donem.yil, donem.ay) else 0
+            tamamlanmamis_donemler.append(f"{ay_adi} ({gecen}/{son_gun} gün)")
         logger.info(
             "Export: %s | %s kişi yazıldı, %s satır sıfırlandı",
             ay_adi, len(dokunulan_satirlar), len(sifirlanacak),
@@ -477,6 +514,16 @@ def disa_aktar(
     if eklenen_personel:
         uyarilar.append(
             "Excel'de satırı olmayan personel için yeni satır açıldı: " + ", ".join(eklenen_personel)
+        )
+    if silinen_personel:
+        uyarilar.append(
+            "Dönem başlamadan önce işten ayrıldığı için sayfadan çıkarıldı: "
+            + ", ".join(silinen_personel)
+        )
+    if tamamlanmamis_donemler:
+        uyarilar.append(
+            "Ay tamamlanmadı — Ç.GÜN bugüne kadar geçen güne göre hesaplandı: "
+            + ", ".join(tamamlanmamis_donemler)
         )
     if yazilamayan_personel:
         uyarilar.append("YAZILAMADI (satır açılamadı): " + ", ".join(yazilamayan_personel))

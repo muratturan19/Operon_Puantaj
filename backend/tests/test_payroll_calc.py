@@ -268,3 +268,27 @@ def test_resmi_tatil_orani_hafta_sonu_oranindan_bagimsiz():
         hafta_sonu_fm_orani=2.0, resmi_tatil_fm_orani=3.0,  # sendika örneği: resmi tatil ×3
     )
     assert round(sonuc.fm_tl, 2) == round(5.0 * saatlik * 3.0, 2)
+
+
+def test_gelecek_gun_cgun_dan_dusulur():
+    """Ay bitmeden alınan çıktıda Ç.GÜN ayın tamamını göstermemeli (2026-08-25 kararı)."""
+    tam_ay = hesapla(maas=31000, ng=31, gunluk_saat=7.5, girisler=[], tatiller=set())
+    yarim_ay = hesapla(maas=31000, ng=31, gunluk_saat=7.5, girisler=[], tatiller=set(), gelecek_gun=6)
+    assert tam_ay.cgun == 31
+    assert yarim_ay.cgun == 25
+    # G = (MAAŞ / N.G) × Ç.GÜN — hakediş de orantılı düşmeli
+    assert yarim_ay.gun_maasi == pytest.approx(31000 / 31 * 25)
+
+
+def test_gelecek_gun_devamsizlikla_birlikte():
+    sonuc = hesapla(
+        maas=31000, ng=31, gunluk_saat=7.5,
+        girisler=[GunlukGiris(tarih=date(2026, 8, 5), gun_durumu=DEVAMSIZ)],
+        tatiller=set(), gelecek_gun=6,
+    )
+    assert sonuc.cgun == 24
+
+
+def test_gelecek_gun_cgun_u_negatife_dusuremez():
+    sonuc = hesapla(maas=31000, ng=31, gunluk_saat=7.5, girisler=[], tatiller=set(), gelecek_gun=99)
+    assert sonuc.cgun == 0

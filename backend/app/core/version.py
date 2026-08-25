@@ -13,6 +13,6 @@ kullanıcının tarayıcısında ESKİ bir arayüz yüklüdür (önbellek) — U
 """
 from __future__ import annotations
 
-SURUM = "4.9.0"
+SURUM = "4.9.1"
 SURUM_TARIHI = "2026-08-25"
-SURUM_ADI = "Faz 4.9 — export sekmesi, sessiz personel kaybı, hata günlüğü"
+SURUM_ADI = "Faz 4.9 — export sekmesi, sessiz personel kaybı, Ç.GÜN dönem içi hesabı"

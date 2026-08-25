@@ -336,3 +336,38 @@ def roster_satiri_ekle(ws: Worksheet, mapping: ExcelMappingConfig, degerler: dic
     _toplam_araliklarini_genislet(ws, toplam_row + 1, eski_son=referans_row, yeni_son=yeni_row)
     logger.info("Roster satırı eklendi: %s / %r -> satır %s", ws.title, degerler.get("ad_soyad"), yeni_row)
     return yeni_row
+
+
+def _toplam_araliklarini_daralt(ws: Worksheet, toplam_row: int, eski_son: int, yeni_son: int) -> None:
+    """`_toplam_araliklarini_genislet`'in tersi — satır silindiğinde TOPLAM aralığı kısalır."""
+    desen = re.compile(r"(:\$?[A-Z]{1,3}\$?)" + str(eski_son) + r"(?![0-9])")
+    for cell in ws[toplam_row]:
+        if isinstance(cell.value, str) and cell.value.startswith("="):
+            yeni_formul = desen.sub(lambda m: f"{m.group(1)}{yeni_son}", cell.value)
+            if yeni_formul != cell.value:
+                cell.value = yeni_formul
+
+
+def roster_satirlarini_sil(ws: Worksheet, mapping: ExcelMappingConfig, satirlar: set[int]) -> int:
+    """Verilen roster satırlarını sayfadan siler ve TOPLAM aralıklarını daraltır.
+
+    Kullanıcı kararı (2026-08-25): dönem başlamadan önce işten ayrılmış personel
+    o ayın sayfasında hiç görünmemeli. Önceden satırları duruyor ama Ç.GÜN'leri
+    boş kalıyordu — müşteri sarı sütunu "rastgele dolmuş" olarak görüyordu.
+    (Ay içinde ayrılan personel SİLİNMEZ; `personel_filtre.donemde_calisiyor_mu`
+    kararı gereği çıktığı ayın sonuna kadar listede kalır.)
+
+    Silme, satır numaralarını kaydırdığı için ÇAĞIRAN roster'ı yeniden okumalıdır.
+    """
+    if not satirlar:
+        return 0
+    sm = mapping.sheet_mapping
+    toplam_row = find_toplam_row(ws, sm)
+    eski_son = toplam_row - 1
+
+    for satir in sorted(satirlar, reverse=True):   # alttan üste — üsttekilerin no'su kaymasın
+        ws.delete_rows(satir)
+        logger.info("Roster satırı silindi: %s / satır %s", ws.title, satir)
+
+    _toplam_araliklarini_daralt(ws, toplam_row - len(satirlar), eski_son, eski_son - len(satirlar))
+    return len(satirlar)

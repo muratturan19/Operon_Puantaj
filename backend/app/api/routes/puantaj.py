@@ -36,7 +36,14 @@ from app.models.sirket import Sirket
 from app.models.tatil import Tatil
 from app.services.audit import diff_alanlar, log_change
 from app.services.payroll_calc import GunlukGiris, hesapla
-from app.services.personel_filtre import donemde_calisiyor_mu, efektif_maas, efektif_ng, ise_disi_gun_sayisi
+from app.services.personel_filtre import (
+    donemde_calisiyor_mu,
+    efektif_maas,
+    efektif_ng,
+    gelecek_gun_sayisi,
+    ise_disi_gun_sayisi,
+    sayilan_girisler,
+)
 
 router = APIRouter(prefix="/api/puantaj", tags=["puantaj"])
 
@@ -189,12 +196,14 @@ def _personel_ozet_hesapla(
     maas = efektif_maas(session, personel.id, donem)
     girisler_calc = [
         GunlukGiris(tarih=g.tarih, gun_durumu=g.gun_durumu, izin_saat=g.izin_saat, fm_saat=g.fm_saat)
-        for g in girisler
+        # `gelecek_gun` ile çift kesinti olmasın diye gelecek tarihli girişler elenir
+        for g in sayilan_girisler(girisler, donem.yil, donem.ay)
     ]
     sonuc = hesapla(
         maas=maas, ng=ng, gunluk_saat=tip.gunluk_saat if tip else 7.5,
         girisler=girisler_calc, tatiller=tatiller,
         ise_disi_gun=ise_disi_gun_sayisi(personel, donem.yil, donem.ay),
+        gelecek_gun=gelecek_gun_sayisi(personel, donem.yil, donem.ay),
         raporlu_politikasi=sirket.raporlu_politikasi if sirket else "hic_odeme",
         raporlu_esik_gun=sirket.raporlu_esik_gun if sirket else 0,
         hafta_ici_fm_orani=tip.hafta_ici_fm_orani if tip else 1.5,

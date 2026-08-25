@@ -6,4 +6,4 @@
  * ayrışır; AppLayout bunu görüp "Sayfayı yenileyin" uyarısı gösterir.
  * CHANGELOG'a yeni başlık eklenince ikisi birlikte güncellenir.
  */
-export const FRONTEND_SURUM = '4.9.0'
+export const FRONTEND_SURUM = '4.9.1'

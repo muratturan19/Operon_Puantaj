@@ -10,7 +10,7 @@ aydan itibaren görünür (daha öncesinde değil).
 from __future__ import annotations
 
 import calendar
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import sqlalchemy as sa
 from sqlmodel import Session, select
@@ -19,6 +19,63 @@ from app.models.donem import Donem
 from app.models.personel import Personel
 from app.models.personel_donem_ayar import PersonelDonemAyar
 from app.models.personel_maas_gecmisi import PersonelMaasGecmisi
+
+
+# Türkiye kalıcı olarak UTC+3 (2016'dan beri yaz saati uygulaması yok). Sunucu
+# UTC çalıştığı için `date.today()` gece 00:00-03:00 arasında BİR ÖNCEKİ günü
+# verir — "bugüne kadar kaç gün geçti" hesabı bundan etkilenmemeli.
+_TR = timezone(timedelta(hours=3))
+
+
+def bugun_tr() -> date:
+    return datetime.now(_TR).date()
+
+
+def gelecek_gun_sayisi(personel: Personel, yil: int, ay: int, bugun: date | None = None) -> int:
+    """Dönemin HENÜZ GELMEMİŞ gün sayısı — `ise_disi_gun_sayisi` ile çakışmaz.
+
+    Kullanıcı kararı (2026-08-25, müşteri geri bildirimi: "daha ay bitmeden 31 gün
+    yazıyor mesela"): içinde bulunulan ay için Ç.GÜN, ayın tamamı değil bugüne
+    kadar geçen gün üzerinden hesaplanır. Geçmiş aylarda bu sayı 0'dır, yani
+    davranış değişmez.
+
+    Yalnızca hem GELECEKTE hem de kişinin çalışma penceresi İÇİNDE olan günler
+    sayılır; pencere dışındaki günler zaten `ise_disi_gun_sayisi` ile düşülüyor,
+    ikisini birden saymak çift kesinti olurdu (ör. 10 Ağustos'ta işten çıkan biri
+    ayın 25'inde export edilirse Ç.GÜN yine 10 çıkmalı, 4 değil).
+    """
+    bugun = bugun or bugun_tr()
+    donem_bitis = date(yil, ay, calendar.monthrange(yil, ay)[1])
+    if bugun >= donem_bitis:
+        return 0
+
+    gelecek_baslangic = max(date(yil, ay, 1), bugun + timedelta(days=1))
+    calisilan_bitis = min(donem_bitis, personel.isten_cikis_tarihi or donem_bitis)
+    calisilan_baslangic = max(date(yil, ay, 1), personel.ise_baslama_tarihi or date(yil, ay, 1))
+
+    baslangic = max(gelecek_baslangic, calisilan_baslangic)
+    bitis = calisilan_bitis
+    return max(0, (bitis - baslangic).days + 1)
+
+
+def sayilan_son_gun(yil: int, ay: int, bugun: date | None = None) -> date:
+    """Bu dönemde hesaba katılan son gün — geçmiş aylarda ayın son günü."""
+    donem_bitis = date(yil, ay, calendar.monthrange(yil, ay)[1])
+    return min(donem_bitis, bugun or bugun_tr())
+
+
+def sayilan_girisler(girisler: list, yil: int, ay: int, bugun: date | None = None) -> list:
+    """Gelecek tarihli girişleri eler.
+
+    Bug (2026-08-25, `gelecek_gun` ile aynı gün ortaya çıktı): ay bitmeden Ç.GÜN
+    artık gelmemiş günleri düşüyor. Kullanıcılar ileriye dönük de işaretleme
+    yapıyor (ör. ZÜBEYDE KURAN'ın 26-31 Ağustos raporlu günleri) ve bu günler
+    ÇİFT düşülüyordu: bir kez `gelecek_gun` içinde, bir kez raporlu/devamsız
+    olarak. "Bugüne kadar" çıktısı, bugüne kadarki girişlerle hesaplanmalı —
+    henüz yaşanmamış bir fazla mesai de ödenmemeli.
+    """
+    son_gun = sayilan_son_gun(yil, ay, bugun)
+    return [g for g in girisler if g.tarih <= son_gun]
 
 
 def donemde_calisiyor_mu(personel: Personel, yil: int, ay: int) -> bool:

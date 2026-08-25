@@ -27,6 +27,7 @@ from app.services.excel_adapter import (
     parse_sheet_donem,
     read_roster,
     roster_satiri_ekle,
+    roster_satirlarini_sil,
     save_workbook,
     sayfayi_kronolojik_yerlestir,
     write_export,
@@ -298,3 +299,23 @@ def test_roster_satiri_ekle_toplam_araligini_genisletir(besim_copy, besim_mappin
     toplam_sonra = find_toplam_row(ws, besim_mapping.sheet_mapping)
     assert toplam_sonra == toplam_once + 1
     assert ws[f"E{toplam_sonra}"].value == f"=SUM(E3:E{yeni_satir})"  # yeni satır toplama dahil
+
+
+def test_roster_satirlarini_sil_toplam_araligini_daraltir(besim_copy, besim_mapping):
+    """İşten ayrılmış personel sayfadan çıkarılınca TOPLAM aralığı da kısalmalı."""
+    wb = open_workbook(str(besim_copy))
+    ws = _temmuz_sayfasi(wb, besim_mapping)
+    once = read_roster(ws, besim_mapping)
+    toplam_once = find_toplam_row(ws, besim_mapping.sheet_mapping)
+    silinecek = {once[1].excel_satir, once[3].excel_satir}
+    silinen_adlar = {once[1].alanlar["ad_soyad"], once[3].alanlar["ad_soyad"]}
+
+    assert roster_satirlarini_sil(ws, besim_mapping, silinecek) == 2
+
+    sonra = read_roster(ws, besim_mapping)
+    assert len(sonra) == len(once) - 2
+    assert silinen_adlar.isdisjoint({k.alanlar["ad_soyad"] for k in sonra})
+
+    toplam_sonra = find_toplam_row(ws, besim_mapping.sheet_mapping)
+    assert toplam_sonra == toplam_once - 2
+    assert ws[f"E{toplam_sonra}"].value == f"=SUM(E3:E{toplam_sonra - 1})"

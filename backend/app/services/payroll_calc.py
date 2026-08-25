@@ -125,6 +125,7 @@ def hesapla(
     tatiller: set[date],
     prim: float = 0.0,
     ise_disi_gun: int = 0,
+    gelecek_gun: int = 0,
     raporlu_politikasi: str = RAPORLU_HIC_ODEME,
     raporlu_esik_gun: int = 0,
     hafta_ici_fm_orani: float = 1.5,
@@ -134,9 +135,11 @@ def hesapla(
 ) -> HesapSonucu:
     """
     saatlik_ücret = (MAAŞ / N.G) / gunluk_saat
-    Ç.GÜN         = N.G − ise_disi_gun − devamsız_gün − raporlu_düşen_gün   (min 0)
+    Ç.GÜN         = N.G − ise_disi_gun − gelecek_gun − devamsız_gün − raporlu_düşen_gün  (min 0)
                     — yıllık izin hiçbir zaman düşmez; raporlu_düşen_gün politikaya bağlı
-                    (0/tam raporlu_gün/N-gün-eşiği artığı); ise_disi_gun kısmi ay için.
+                    (0/tam raporlu_gün/N-gün-eşiği artığı); ise_disi_gun kısmi ay için;
+                    gelecek_gun içinde bulunulan ayın henüz gelmemiş günleri için
+                    (bkz. personel_filtre.gelecek_gun_sayisi — geçmiş aylarda 0).
     G             = (MAAŞ / N.G) × Ç.GÜN
     İZİN.TL       = toplam_izin_saati × saatlik_ücret
     FM.TL         = Σ fm_saat_gün × saatlik_ücret × fm_orani(...) — bkz. fm_orani() üç kademesi
@@ -161,7 +164,7 @@ def hesapla(
     else:  # RAPORLU_HIC_ODEME
         raporlu_dusen_gun = raporlu_gun
 
-    cgun = max(0, ng - ise_disi_gun - devamsizlik_sayisi - raporlu_dusen_gun)
+    cgun = max(0, ng - ise_disi_gun - gelecek_gun - devamsizlik_sayisi - raporlu_dusen_gun)
     gun_maasi = (maas / ng) * cgun
 
     yillik_izin_gun = sum(1 for g in girisler if g.gun_durumu == YILLIK_IZIN)

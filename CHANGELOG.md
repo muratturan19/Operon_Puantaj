@@ -9,6 +9,59 @@
 > birlikte güncellenir: `backend/app/core/version.py` ve `frontend/src/config/surum.ts`.
 > Canlıdaki sürüm `GET /api/surum` ile sorulabilir, arayüzde sağ üstteki rozette görünür.
 
+## [4.9.1] — 2026-08-25 (Ç.GÜN ay bitmeden tam ay yazıyordu; ayrılmış personel sayfada duruyordu)
+
+Müşteri geri bildirimi (aynı gün, 4.9.0'dan sonra): *"sarı olan sütun rast gele dolmuş"*,
+*"daha ay bitmeden 31 gün yazıyor mesela"*. Sarı sütun Ç.GÜN. İki ayrı kural üst üste
+biniyordu ve dışarıdan rastgele görünüyordu.
+
+### Düzeltilenler
+
+- **Ç.GÜN, içinde bulunulan ayda ayın tamamını gösteriyordu.** Hesap
+  `Ç.GÜN = N.G − işe_dışı_gün − devamsız − raporlu_düşen` idi; "kaç gün geçti" diye bir
+  kavram yoktu. 25 Ağustos'ta alınan çıktıda hiçbir devamsızlığı olmayan herkes 31 gün
+  çalışmış görünüyordu. Değerler aslında rastgele değildi (BÜŞRA ÇETİNKAY 31−11 raporlu=20,
+  HURİYE AKSU 31−6=25, DEMET ÖZTÜRK 31−3=28 — formülle birebir), ama ay bitmemişken
+  "31" yazması müşteri için anlamsızdı.
+  - `personel_filtre.gelecek_gun_sayisi()` — dönemin henüz gelmemiş gün sayısı;
+    `hesapla()`'ya yeni `gelecek_gun` parametresi olarak geçer. **Geçmiş aylarda 0 döner,
+    yani kapanmış bordrolar bit-bire-bit aynı kalır.**
+  - `ise_disi_gun_sayisi` ile ÇAKIŞMAZ: yalnızca hem gelecekte hem de kişinin çalışma
+    penceresi içinde olan günler sayılır. 10 Ağustos'ta çıkan biri için ayın 25'inde
+    Ç.GÜN yine 10 çıkar (çift kesinti olsaydı 4 çıkardı).
+  - Sunucu UTC çalıştığı için "bugün" `date.today()` ile değil sabit UTC+3 ile bulunur
+    (Türkiye'de yaz saati yok); aksi halde gece 00:00-03:00 arası bir gün geri kayardı.
+  - Grid özeti (`ozet()`) de aynı parametreyi kullanıyor — ekran ile Excel çelişmez.
+  - ⚠️ **Bilinçli kabul edilen risk (kullanıcı kararı):** bordro ay bitmeden
+    çalıştırılıyorsa Ç.GÜN eksik olacağı için maaş da eksik hesaplanır. Ayın tamamı
+    isteniyorsa çıktı ay kapandıktan sonra alınmalıdır.
+- **Dönem başlamadan önce işten ayrılmış personel sayfada duruyordu.** Girişleri olmadığı
+  için Ç.GÜN'leri boş kalıyor, sütunun "yarısı dolu yarısı boş" görünmesinin bir sebebi de
+  bu oluyordu — Ağustos sayfasında 5 kişi (ŞÜKRİYE TOZĞUN 03.06, ÖZLEM YERLİKAYA 15.06,
+  HATİCE ARSLAN 22.06, FEYZİ ERKAN 13.07, AYŞE KIŞKIR 26.07). `roster_satirlarini_sil()`
+  bunları o ayın sayfasından çıkarır ve TOPLAM aralıklarını daraltır. Ay İÇİNDE ayrılan
+  personel silinmez — 2026-07-04 kararı gereği çıktığı ayın sonuna kadar listede kalır.
+- **Gelecek tarihli girişler çift düşülüyordu.** Kullanıcılar ileriye dönük de işaretleme
+  yapıyor (ör. ZÜBEYDE KURAN'ın 26-31 Ağustos raporlu günleri, BÜŞRA ÇETİNKAY'ın 26-27'si).
+  Bu günler hem `gelecek_gun` içinde hem de raporlu/devamsız olarak sayılıyor, yani İKİ KEZ
+  düşülüyordu — BÜŞRA'nın Ç.GÜN'ü 14 çıkıyordu, doğrusu 16. `personel_filtre.sayilan_girisler()`
+  bugünden sonraki girişleri eler; "bugüne kadar" çıktısı bugüne kadarki girişlerle hesaplanır
+  (henüz yaşanmamış bir fazla mesai de ödenmez). Geçmiş aylarda hiçbir giriş elenmez.
+- **Export uyarısı genişletildi:** hangi ayın tamamlanmadığı (ör. "AĞUSTOS 2026 (25/31 gün)")
+  ve kimlerin sayfadan çıkarıldığı `X-Puantaj-Uyari` başlığıyla arayüzde gösteriliyor.
+
+### Bilinçli olarak DEĞİŞMEYEN
+
+- **Puantaj girişi olmayan personelin satırı boş kalmaya devam ediyor** (kullanıcı kararı,
+  2026-08-25). Ayı tam çalışan biri (hiç istisna girilmemiş) Ç.GÜN'ü boş görünür;
+  CLAUDE.md §7'deki "dokunulmamış satıra yazma" kuralı korundu.
+
+### Doğrulama
+
+- `pytest` 46/46 yeşil (13 yeni test: geçmiş ayda gelecek_gun=0, ay ortası kalan gün,
+  ay içinde ayrılanda çift kesinti olmaması, ay ortasında başlayan, Ç.GÜN'ün negatife
+  düşmemesi, TOPLAM aralığının silmede daralması, gelecek tarihli girişlerin elenmesi).
+
 ## [4.9.0] — Faz 4.9 — 2026-08-25 (kritik: export yanlış sekmede açılıyor + sessiz veri kaybı + 6 haftalık log körlüğü)
 
 Müşteri bildirimi: *"normal puantajları giriyoruz, bazen personel de ekliyoruz, ama Excel
