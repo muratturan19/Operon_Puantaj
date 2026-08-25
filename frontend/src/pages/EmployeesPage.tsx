@@ -19,8 +19,17 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { listeleCalismaTipleri, listelePersonel, personelGuncelle, personelOlustur } from '../services/personelService'
+import {
+  listeleCalismaTipleri,
+  listeleMaasGecmisi,
+  listelePersonel,
+  personelGuncelle,
+  personelOlustur,
+  zamGir,
+  type MaasGecmisiKaydi,
+} from '../services/personelService'
 import type { CalismaTipi, Personel } from '../services/types'
+import { TR_AYLAR } from '../utils/date'
 
 function bugun(): string {
   // toISOString() UTC'ye çevirir — TR saatinde gece yarısına yakın saatlerde
@@ -31,7 +40,6 @@ function bugun(): string {
 
 type DuzenlemeFormu = {
   calisma_tipi_id: number
-  maas: number
   ng: number
   ise_baslama_tarihi: string | null
 }
@@ -44,10 +52,14 @@ export function EmployeesPage() {
   const [duzenlenenId, setDuzenlenenId] = useState<number | null>(null)
   const [duzenlemeForm, setDuzenlemeForm] = useState<DuzenlemeFormu>({
     calisma_tipi_id: 0,
-    maas: 0,
     ng: 30,
     ise_baslama_tarihi: null,
   })
+  const bugunTarih = new Date()
+  const [zamDialog, setZamDialog] = useState<{ personel: Personel; yil: number; ay: number; maas: number } | null>(
+    null,
+  )
+  const [gecmisDialog, setGecmisDialog] = useState<{ personel: Personel; kayitlar: MaasGecmisiKaydi[] } | null>(null)
 
   function yenile() {
     listelePersonel().then(setListe)
@@ -78,7 +90,6 @@ export function EmployeesPage() {
     setDuzenlenenId(p.id)
     setDuzenlemeForm({
       calisma_tipi_id: p.calisma_tipi_id,
-      maas: p.maas ?? 0,
       ng: p.ng,
       ise_baslama_tarihi: p.ise_baslama_tarihi,
     })
@@ -90,10 +101,26 @@ export function EmployeesPage() {
     yenile()
   }
 
+  async function zamKaydet() {
+    if (!zamDialog) return
+    await zamGir(zamDialog.personel.id, zamDialog.yil, zamDialog.ay, zamDialog.maas)
+    setZamDialog(null)
+    yenile()
+  }
+
+  async function gecmisiGoster(p: Personel) {
+    const kayitlar = await listeleMaasGecmisi(p.id)
+    setGecmisDialog({ personel: p, kayitlar })
+  }
+
   return (
     <Stack spacing={3} sx={{ maxWidth: 1080 }}>
       <Typography variant="h5" sx={{ fontWeight: 700 }}>
         Personel
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 720 }}>
+        Çalışanları ve işe giriş/çıkış tarihlerini buradan yönetin. İşten çıkan personel,
+        çıktığı ayın sonuna kadar puantaj ekranında görünmeye devam eder.
       </Typography>
 
       <TableContainer component={Paper} variant="outlined">
@@ -138,19 +165,30 @@ export function EmployeesPage() {
                     )}
                   </TableCell>
                   <TableCell align="right">
-                    {duzenleniyor ? (
-                      <TextField
-                        type="number"
-                        size="small"
-                        sx={{ width: 110 }}
-                        value={duzenlemeForm.maas}
-                        onChange={(e) => setDuzenlemeForm({ ...duzenlemeForm, maas: parseFloat(e.target.value) })}
-                      />
-                    ) : p.maas != null ? (
-                      `${p.maas.toLocaleString('tr-TR')} ₺`
-                    ) : (
-                      '—'
-                    )}
+                    <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end">
+                      <span>{p.maas != null ? `${p.maas.toLocaleString('tr-TR')} ₺` : '—'}</span>
+                      {p.maas != null && (
+                        <Button size="small" onClick={() => gecmisiGoster(p)} title="Maaş geçmişini gör">
+                          Geçmiş
+                        </Button>
+                      )}
+                      {p.maas != null && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() =>
+                            setZamDialog({
+                              personel: p,
+                              yil: bugunTarih.getFullYear(),
+                              ay: bugunTarih.getMonth() + 1,
+                              maas: p.maas ?? 0,
+                            })
+                          }
+                        >
+                          Zam Gir
+                        </Button>
+                      )}
+                    </Stack>
                   </TableCell>
                   <TableCell align="right">
                     {duzenleniyor ? (
@@ -310,6 +348,90 @@ export function EmployeesPage() {
           >
             İşten Çıkar
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={zamDialog !== null} onClose={() => setZamDialog(null)}>
+        <DialogTitle>{zamDialog?.personel.ad_soyad} — Zam Gir</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 340 }}>
+            Yeni maaş, seçtiğiniz aydan itibaren geçerli olur — önceki ayların bordrosu
+            eski maaşla hesaplanmaya devam eder, etkilenmez.
+          </Typography>
+          <Stack spacing={2} sx={{ minWidth: 280 }}>
+            <Stack direction="row" spacing={2}>
+              <Select
+                size="small"
+                fullWidth
+                value={zamDialog?.ay ?? 1}
+                onChange={(e) => setZamDialog((d) => (d ? { ...d, ay: Number(e.target.value) } : d))}
+              >
+                {TR_AYLAR.map((ad, i) => (
+                  <MenuItem key={ad} value={i + 1}>
+                    {ad}
+                  </MenuItem>
+                ))}
+              </Select>
+              <TextField
+                label="Yıl"
+                type="number"
+                size="small"
+                sx={{ width: 120 }}
+                value={zamDialog?.yil ?? bugunTarih.getFullYear()}
+                onChange={(e) => setZamDialog((d) => (d ? { ...d, yil: parseInt(e.target.value, 10) } : d))}
+              />
+            </Stack>
+            <TextField
+              label="Yeni Maaş"
+              type="number"
+              size="small"
+              fullWidth
+              value={zamDialog?.maas ?? 0}
+              onChange={(e) => setZamDialog((d) => (d ? { ...d, maas: parseFloat(e.target.value) } : d))}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setZamDialog(null)}>İptal</Button>
+          <Button variant="contained" onClick={zamKaydet}>
+            Kaydet
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={gecmisDialog !== null} onClose={() => setGecmisDialog(null)}>
+        <DialogTitle>{gecmisDialog?.personel.ad_soyad} — Maaş Geçmişi</DialogTitle>
+        <DialogContent>
+          <Table size="small" sx={{ minWidth: 280 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>Etkin Dönem</TableCell>
+                <TableCell align="right">Maaş</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {gecmisDialog?.kayitlar.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={2}>
+                    <Typography variant="body2" color="text.secondary">
+                      Henüz hiç zam girilmemiş — güncel maaş tüm dönemler için geçerli.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+              {gecmisDialog?.kayitlar.map((k) => (
+                <TableRow key={k.id}>
+                  <TableCell>
+                    {TR_AYLAR[k.ay - 1]} {k.yil}
+                  </TableCell>
+                  <TableCell align="right">{k.maas.toLocaleString('tr-TR')} ₺</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setGecmisDialog(null)}>Kapat</Button>
         </DialogActions>
       </Dialog>
     </Stack>

@@ -136,6 +136,10 @@ export function EmployeeTypesPage() {
       <Typography variant="h5" sx={{ fontWeight: 700 }}>
         Çalışma Tipleri
       </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 720 }}>
+        Çalışanların günlük/haftalık çalışma saatlerini ve fazla mesai (FM) çarpanlarını
+        buradan tanımlayın. Her personel bir çalışma tipine atanır.
+      </Typography>
 
       <TableContainer component={Paper} variant="outlined">
         <Table size="small">

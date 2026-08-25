@@ -320,6 +320,51 @@ yazılmıştı) birleştirildi: **`E:\Mira\SaaS\apps\Operon_Puantaj` tek asıl (
 kabul edildi, `E:\Mira\Operon_Puantaj` robocopy /MIR ile bununla eşitlendi (2026-07-05). Yeni
 geliştirme yalnızca `E:\Mira\SaaS\apps\Operon_Puantaj` üzerinden yapılmalı.
 
+### 8.10 Maaş Zammı — Geçmiş Bordroyu Bozan Kritik Açık — ✅ BULUNDU VE DÜZELTİLDİ (2026-07-06)
+
+Kullanıcı sorusu: "yıllar boyunca sorunsuz çalışması için herşeyi düşünmeliyiz... maaşlara zam
+gelince onu sisteme nasıl alacağız? Bu program sonradan puantaj konusundaki tek kaynak
+olacaksa ona göre yapılanmalıyız." Kod taraması gerçek ve ciddi bir açık ortaya çıkardı:
+`Personel.maas` tek bir "güncel" değerdi, hiçbir geçmiş/tarihçe tutmuyordu — `ozet()` ve
+Excel export, hangi GEÇMİŞ dönem hesaplanıyor olursa olsun her zaman BUGÜNKÜ maaşı okuyordu.
+Birine zam yapılınca (ör. Ağustos'ta) geçmiş ayların (ör. Haziran) bordrosu da tekrar
+hesaplanırsa/dışa aktarılırsa yanlışlıkla yeni maaşla hesaplanırdı — N.G için Faz 4'te tam
+olarak çözülen sorunun birebir aynısı ("dönem bazlı değer, ama sabit tutulan bir alanda
+saklanıyor"), sadece maaş için hiç ele alınmamıştı.
+
+**Çözüm (N.G'nin `PersonelDonemAyar` desenine benzer ama FARKLI semantikte):**
+`PersonelMaasGecmisi` tablosu — etkin-tarihli (carry-forward): bir kayıt, girildiği (yıl,ay)'dan
+itibaren bir SONRAKİ kayda kadar TÜM dönemlere uygulanır (N.G'nin istisnası SADECE o dönem
+için geçerliydi, bu farklı). `efektif_maas()` resolver'ı hedef dönemden önceki/o döneme ait en
+son kaydı bulur. `POST /api/personel/{id}/zam`, ilk kez zam giriliyorsa o ana kadarki maaşı
+geçmiş dönemler için sabitleyen bir "taban" kayıt da otomatik ekliyor. `PersonelUpdate`'ten
+`maas` alanı bilinçli olarak kaldırıldı — artık tüm maaş değişiklikleri etkin dönem
+belirtilerek yapılmak zorunda. Excel export'ta MAAŞ kolonu da (N.G'deki gibi) müşterinin
+kendi formülleri için güncelleniyor artık.
+
+Canlı API'de uçtan uca doğrulandı (geçmiş dönem değişmedi, yeni dönem doğru maaşı kullandı),
+tarayıcıda "Zam Gir"/"Geçmiş" UI'ı ile doğrulandı, sıfır konsol hatası — ayrıntılar
+`CHANGELOG.md` Faz 4.8'de.
+
+### 8.9 Yıl Geçişi Riski — Resmi Tatiller — ✅ BULUNDU VE HAFİFLETİLDİ (2026-07-06)
+
+Kullanıcı sorusu: "bu yıl bitince 2027'ye geçince ne olacak?" Kod taranarak doğrulandı:
+
+**Otomatik/sorunsuz olanlar:** Dönem seçici (`bugun.getFullYear()` her zaman güncel), `Donem.ng`
+(`calendar.monthrange` her yılda çalışır), Excel sheet adı ayrıştırma/yeni-ay-sayfası-oluşturma
+(yıl regex'i `20\d\d`, metin ara/değiştir dinamik) — hiçbiri hardcoded yıl içermiyor.
+
+**Tek gerçek risk:** `VARSAYILAN_TATIL_2026` (`alembic/versions/81f9c9647f37_seed_data.py`) —
+14 resmi tatil tarihi, kuruluşta BİR KEZ seed ediliyor. Dini bayramlar (Ramazan/Kurban) yıldan
+yıla ~10-11 gün kaydığı için otomatik hesaplanamaz; kimse elle girmezse yeni yılın resmi
+tatilinde çalışılan FM sessizce hafta içi oranıyla hesaplanır (düşük ödeme riski).
+
+**Hafifletme:** `AttendanceGridPage.tsx`'e, seçilen dönemin yılında hiç `Tatil` kaydı yoksa
+`tatil_yonetebilir` iznine sahip kullanıcılara bir uyarı banner'ı eklendi ("Tatilleri Gir"
+butonuyla `HolidaysDialog`'u doğrudan açıyor). Otomatik tatil ÜRETİMİ yapılmadı (dini bayram
+tarihleri güvenilir hesaplanamaz) — sadece sessiz hatayı görünür kılan bir uyarı. Gerçek 2027
+dönemi oluşturulup tarayıcıda doğrulandı.
+
 ### 8.7 Kurulum Sihirbazı (Setup Wizard) — ✅ UYGULANDI (2026-07-04)
 
 Murat'ın önerisi: kurulum sonrası ilk açılışta "göze hoş gelen" bir setup wizard, aşağıdaki

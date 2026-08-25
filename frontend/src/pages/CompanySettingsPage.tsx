@@ -58,6 +58,10 @@ export function CompanySettingsPage() {
       <Typography variant="h5" sx={{ fontWeight: 700 }}>
         Şirket Ayarları
       </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 640 }}>
+        Raporlu (sağlık raporu) günlerinin maaşa nasıl yansıyacağını şirket geneli olarak
+        buradan belirleyin.
+      </Typography>
 
       {mesaj && <Alert severity="success">{mesaj}</Alert>}
       {hata && <Alert severity="error">{hata}</Alert>}

@@ -22,6 +22,27 @@ export async function personelGuncelle(id: number, payload: Partial<Personel>): 
   return data
 }
 
+export interface MaasGecmisiKaydi {
+  id: number
+  yil: number
+  ay: number
+  maas: number
+  created_at: string
+}
+
+// `maas` artık PersonelUpdate'te yok (kullanıcı sorusu, 2026-07-06: zam geçmiş
+// dönemleri bozmasın) — tüm maaş değişiklikleri bu uç nokta üzerinden, etkin
+// olduğu (yıl,ay) belirtilerek yapılır.
+export async function zamGir(personelId: number, yil: number, ay: number, maas: number): Promise<Personel> {
+  const { data } = await apiClient.post<Personel>(`/personel/${personelId}/zam`, { yil, ay, maas })
+  return data
+}
+
+export async function listeleMaasGecmisi(personelId: number): Promise<MaasGecmisiKaydi[]> {
+  const { data } = await apiClient.get<MaasGecmisiKaydi[]>(`/personel/${personelId}/maas-gecmisi`)
+  return data
+}
+
 export async function listeleCalismaTipleri(): Promise<CalismaTipi[]> {
   const { data } = await apiClient.get<CalismaTipi[]>('/calisma-tipleri')
   return data

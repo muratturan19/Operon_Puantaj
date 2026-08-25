@@ -90,6 +90,10 @@ export function UsersRolesPage() {
       <Typography variant="h5" sx={{ fontWeight: 700 }}>
         Kullanıcılar
       </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 720 }}>
+        Programa giriş yapacak kullanıcıları ve rollerini (yetkilerini) buradan yönetin — yeni
+        hesap açın, rol değiştirin, pasife alın veya şifre sıfırlayın.
+      </Typography>
 
       <TableContainer component={Paper} variant="outlined">
         <Table size="small">

@@ -1,8 +1,22 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link as RouterLink, useLocation } from 'react-router-dom'
-import { AppBar, Box, Button, Stack, Toolbar, Typography } from '@mui/material'
+import {
+  Alert,
+  AppBar,
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Stack,
+  TextField,
+  Toolbar,
+  Typography,
+} from '@mui/material'
 import { useAuth } from '../context/AuthContext'
 import { AUTH_MODE } from '../config/env'
+import { parolaDegistir } from '../services/usersService'
 
 interface NavItem {
   to: string
@@ -25,6 +39,38 @@ const NAV_ITEMS: NavItem[] = [
 export function AppLayout({ children }: { children: ReactNode }) {
   const { user, cikisYap, izniVar } = useAuth()
   const location = useLocation()
+  const [sifreDialogAcik, setSifreDialogAcik] = useState(false)
+  const [yeniSifre, setYeniSifre] = useState('')
+  const [yeniSifreTekrar, setYeniSifreTekrar] = useState('')
+  const [hata, setHata] = useState<string | null>(null)
+  const [mesaj, setMesaj] = useState<string | null>(null)
+
+  function dialoguKapat() {
+    setSifreDialogAcik(false)
+    setYeniSifre('')
+    setYeniSifreTekrar('')
+    setHata(null)
+  }
+
+  async function sifreyiKaydet() {
+    if (!user) return
+    if (yeniSifre.length < 6) {
+      setHata('Şifre en az 6 karakter olmalı')
+      return
+    }
+    if (yeniSifre !== yeniSifreTekrar) {
+      setHata('Şifreler eşleşmiyor')
+      return
+    }
+    setHata(null)
+    try {
+      await parolaDegistir(user.id, yeniSifre)
+      dialoguKapat()
+      setMesaj('Şifreniz güncellendi')
+    } catch {
+      setHata('Şifre güncellenemedi, tekrar deneyin')
+    }
+  }
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
@@ -57,12 +103,54 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <Typography variant="body2" sx={{ opacity: 0.8 }}>
             {user?.ad_soyad}
           </Typography>
+          <Button color="inherit" size="small" onClick={() => setSifreDialogAcik(true)}>
+            Şifremi Değiştir
+          </Button>
           <Button color="inherit" onClick={cikisYap} size="small">
             Çıkış
           </Button>
         </Toolbar>
       </AppBar>
-      <Box sx={{ p: { xs: 2, md: 4 } }}>{children}</Box>
+      <Box sx={{ p: { xs: 2, md: 4 } }}>
+        {mesaj && (
+          <Alert severity="success" onClose={() => setMesaj(null)} sx={{ mb: 2 }}>
+            {mesaj}
+          </Alert>
+        )}
+        {children}
+      </Box>
+
+      <Dialog open={sifreDialogAcik} onClose={dialoguKapat}>
+        <DialogTitle>Şifremi Değiştir</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1, minWidth: 320 }}>
+            {hata && <Alert severity="error">{hata}</Alert>}
+            <TextField
+              autoFocus
+              label="Yeni Şifre"
+              type="password"
+              size="small"
+              fullWidth
+              value={yeniSifre}
+              onChange={(e) => setYeniSifre(e.target.value)}
+            />
+            <TextField
+              label="Yeni Şifre (Tekrar)"
+              type="password"
+              size="small"
+              fullWidth
+              value={yeniSifreTekrar}
+              onChange={(e) => setYeniSifreTekrar(e.target.value)}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={dialoguKapat}>İptal</Button>
+          <Button variant="contained" disabled={!yeniSifre || !yeniSifreTekrar} onClick={sifreyiKaydet}>
+            Kaydet
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }

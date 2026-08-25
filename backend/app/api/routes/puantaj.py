@@ -36,7 +36,7 @@ from app.models.sirket import Sirket
 from app.models.tatil import Tatil
 from app.services.audit import diff_alanlar, log_change
 from app.services.payroll_calc import GunlukGiris, hesapla
-from app.services.personel_filtre import donemde_calisiyor_mu, efektif_ng, ise_disi_gun_sayisi
+from app.services.personel_filtre import donemde_calisiyor_mu, efektif_maas, efektif_ng, ise_disi_gun_sayisi
 
 router = APIRouter(prefix="/api/puantaj", tags=["puantaj"])
 
@@ -186,12 +186,13 @@ def _personel_ozet_hesapla(
 ) -> PersonelOzet:
     tip = session.get(CalismaTipi, personel.calisma_tipi_id)
     ng = efektif_ng(session, personel.id, donem)
+    maas = efektif_maas(session, personel.id, donem)
     girisler_calc = [
         GunlukGiris(tarih=g.tarih, gun_durumu=g.gun_durumu, izin_saat=g.izin_saat, fm_saat=g.fm_saat)
         for g in girisler
     ]
     sonuc = hesapla(
-        maas=personel.maas, ng=ng, gunluk_saat=tip.gunluk_saat if tip else 7.5,
+        maas=maas, ng=ng, gunluk_saat=tip.gunluk_saat if tip else 7.5,
         girisler=girisler_calc, tatiller=tatiller,
         ise_disi_gun=ise_disi_gun_sayisi(personel, donem.yil, donem.ay),
         raporlu_politikasi=sirket.raporlu_politikasi if sirket else "hic_odeme",
@@ -212,7 +213,7 @@ def _personel_ozet_hesapla(
         raporlu_gun=sonuc.raporlu_gun,
         izin_tl=round(sonuc.izin_tl, 2) if maas_gorebilir else None,
         fm_tl=round(sonuc.fm_tl, 2) if maas_gorebilir else None,
-        gun_maasi_kesintisi=round(personel.maas - sonuc.gun_maasi, 2) if maas_gorebilir else None,
+        gun_maasi_kesintisi=round(maas - sonuc.gun_maasi, 2) if maas_gorebilir else None,
     )
 
 

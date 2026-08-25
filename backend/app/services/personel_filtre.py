@@ -12,11 +12,13 @@ from __future__ import annotations
 import calendar
 from datetime import date
 
+import sqlalchemy as sa
 from sqlmodel import Session, select
 
 from app.models.donem import Donem
 from app.models.personel import Personel
 from app.models.personel_donem_ayar import PersonelDonemAyar
+from app.models.personel_maas_gecmisi import PersonelMaasGecmisi
 
 
 def donemde_calisiyor_mu(personel: Personel, yil: int, ay: int) -> bool:
@@ -59,3 +61,29 @@ def efektif_ng(session: Session, personel_id: int, donem: Donem) -> int:
         )
     ).first()
     return override.ng if override else donem.ng
+
+
+def efektif_maas(session: Session, personel_id: int, donem: Donem) -> float:
+    """Bu (personel, dönem) çifti için geçerli maaş — kullanıcı sorusu (2026-07-06):
+    "maaşlara zam gelince onu sisteme nasıl alacağız?" `PersonelMaasGecmisi`
+    ETKİN-TARİHLİDİR (carry-forward) — `PersonelDonemAyar`'ın aksine (sadece o
+    dönem için istisna), bir zam kaydı girildiği (yıl,ay)'dan itibaren bir
+    sonraki zam kaydına kadar TÜM dönemlere uygulanır. Hedef dönemden önceki
+    veya o döneme ait EN SON kayıt kullanılır; hiç kayıt yoksa (bu kişi için
+    henüz hiç zam girilmemiş) `Personel.maas`'a düşülür."""
+    kayit = session.exec(
+        select(PersonelMaasGecmisi)
+        .where(
+            PersonelMaasGecmisi.personel_id == personel_id,
+            sa.or_(
+                PersonelMaasGecmisi.yil < donem.yil,
+                sa.and_(PersonelMaasGecmisi.yil == donem.yil, PersonelMaasGecmisi.ay <= donem.ay),
+            ),
+        )
+        .order_by(PersonelMaasGecmisi.yil.desc(), PersonelMaasGecmisi.ay.desc())
+    ).first()
+    if kayit is not None:
+        return kayit.maas
+
+    personel = session.get(Personel, personel_id)
+    return personel.maas if personel else 0.0
