@@ -29,12 +29,13 @@ from app.api.routes import (
 )
 from app.core.config import get_settings
 from app.core.logging_setup import yapilandir as log_yapilandir
+from app.core.version import SURUM, SURUM_ADI, SURUM_TARIHI
 from app.services.hata_kaydi import kaydet as hata_kaydet, yeni_istek_id
 
 settings = get_settings()
 logger = log_yapilandir()
 
-app = FastAPI(title="Operon Puantaj", version="0.1.0")
+app = FastAPI(title="Operon Puantaj", version=SURUM)
 
 app.add_middleware(
     CORSMiddleware,
@@ -130,7 +131,18 @@ app.include_router(hatalar.router)
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "surum": SURUM}
+
+
+@app.get("/api/surum")
+def surum() -> dict:
+    """Sunucuda çalışan sürüm — kimlik doğrulaması gerektirmez.
+
+    Dışarıdan tek istekle "canlıdaki sürüm hangisi" sorusunu yanıtlar; arayüz de
+    kendi gömülü sürümüyle karşılaştırıp eski bir sekmede açık kalmış kullanıcıyı
+    uyarmak için kullanır.
+    """
+    return {"surum": SURUM, "tarih": SURUM_TARIHI, "ad": SURUM_ADI}
 
 
 @app.get("/api/health")
@@ -141,7 +153,7 @@ def api_health() -> dict:
     **200 + index.html** dönüyordu — yani sağlık kontrolü uygulama tamamen
     bozuk olsa bile yeşil kalıyordu.
     """
-    return {"status": "ok"}
+    return {"status": "ok", "surum": SURUM}
 
 
 def _find_frontend_static() -> Path | None:

@@ -4,6 +4,7 @@ from app.models.sirket import Sirket
 from app.models.rbac import Rol, Kullanici
 from app.models.calisma_tipi import CalismaTipi
 from app.models.personel import Personel
+from app.models.personel_maas_gecmisi import PersonelMaasGecmisi
 from app.models.donem import Donem
 from app.models.personel_donem_ayar import PersonelDonemAyar
 from app.models.tatil import Tatil
@@ -18,6 +19,7 @@ __all__ = [
     "Kullanici",
     "CalismaTipi",
     "Personel",
+    "PersonelMaasGecmisi",
     "Donem",
     "PersonelDonemAyar",
     "Tatil",

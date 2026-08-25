@@ -3,8 +3,13 @@
 > Bu dosya, `CLAUDE.md`/`ROADMAP.md`'deki karar kayıtlarının kronolojik özetidir.
 > Format [Keep a Changelog](https://keepachangelog.com/) ilkelerinden esinlenir, Türkçe.
 > Her girişin *neden*i için `CLAUDE.md`, açık/kapalı roadmap kalemleri için `ROADMAP.md`'ye bakın.
+>
+> **Sürümleme (2026-08-25'te tanımlandı):** buradaki "Faz" numarası sürümün MAJOR.MINOR'ıdır
+> (Faz 4.9 → `4.9.x`), PATCH aynı faz içindeki düzeltmeleri sayar. Sürüm iki yerde sabittir ve
+> birlikte güncellenir: `backend/app/core/version.py` ve `frontend/src/config/surum.ts`.
+> Canlıdaki sürüm `GET /api/surum` ile sorulabilir, arayüzde sağ üstteki rozette görünür.
 
-## [Faz 4.9] — 2026-08-25 (kritik: export yanlış sekmede açılıyor + sessiz veri kaybı + 6 haftalık log körlüğü)
+## [4.9.0] — Faz 4.9 — 2026-08-25 (kritik: export yanlış sekmede açılıyor + sessiz veri kaybı + 6 haftalık log körlüğü)
 
 Müşteri bildirimi: *"normal puantajları giriyoruz, bazen personel de ekliyoruz, ama Excel
 çıktısı aldığımızda güncel girdiğimiz tabloyu değil bambaşka bir şeyi çıktı alıyor."*
@@ -68,11 +73,22 @@ Canlı tenant DB'si ve müşterinin gerçek master dosyasıyla `/api/excel/expor
 
 ### Eklenenler
 
+- **Sürüm bilgisi ve "eski paket" uyarısı.** `GET /api/surum` (kimlik doğrulaması istemez)
+  canlıdaki sürümü döndürür; `/health` ve `/api/health` yanıtlarına da eklendi. Arayüzde
+  başlığın yanında sürüm rozeti var. Rozet, arayüze gömülü sürümü sunucununkiyle
+  karşılaştırır: kullanıcının tarayıcısında önbellekten eski bir paket açıksa düzeltilmiş bir
+  hatayı görmeye devam eder ve bunu anlamasının hiçbir yolu yoktur — bu durumda rozet
+  "yenileyin" uyarısına döner (bugün müşteriye Ctrl+F5 dedirtmek zorunda kalmamızın nedeni).
 - **`error_log` tablosu + global exception handler.** Yakalanmamış her hata tenant DB'sine
   traceback'iyle yazılır, kullanıcıya `E-xxxxxxxx` takip kodu gösterilir. Güvenlik ekranına
   "Sunucu Hataları" sekmesi eklendi (`GET /api/hatalar`, `audit_gorebilir` izniyle) —
   müşteri kodu söylediğinde kayıt tek hamlede bulunur. DB yazımı best-effort'tur; hata
   yolunda ikinci bir istisna üretilmez.
+
+- **`models/__init__.py` `PersonelMaasGecmisi`'yi kaydetmiyordu.** Dosyanın kendi
+  docstring'i "Alembic autogenerate için şart" diyor; model burada kayıtlı olmadığı için bir
+  `alembic revision --autogenerate` çalıştırması `personel_maas_gecmisi` tablosunu fazlalık
+  sayıp **DROP** önerirdi — maaş tarihçesinin tamamı. Henüz tetiklenmemiş bir mayındı.
 
 ### Doğrulama
 

@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link as RouterLink, useLocation } from 'react-router-dom'
 import {
   Alert,
   AppBar,
   Box,
   Button,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -12,11 +13,14 @@ import {
   Stack,
   TextField,
   Toolbar,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import { useAuth } from '../context/AuthContext'
 import { AUTH_MODE } from '../config/env'
+import { FRONTEND_SURUM } from '../config/surum'
 import { parolaDegistir } from '../services/usersService'
+import { surumGetir, type SurumBilgisi } from '../services/surumService'
 
 interface NavItem {
   to: string
@@ -44,6 +48,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [yeniSifreTekrar, setYeniSifreTekrar] = useState('')
   const [hata, setHata] = useState<string | null>(null)
   const [mesaj, setMesaj] = useState<string | null>(null)
+  const [sunucuSurumu, setSunucuSurumu] = useState<SurumBilgisi | null>(null)
+
+  useEffect(() => {
+    surumGetir().then(setSunucuSurumu).catch(() => setSunucuSurumu(null))
+  }, [])
+
+  // Sunucu yeni sürüme geçtiği halde tarayıcıda önbellekten eski paket açıksa
+  // kullanıcı düzeltilmiş bir hatayı görmeye devam eder ve bunu anlamasının
+  // hiçbir yolu yoktur — rozet bu durumda uyarıya döner.
+  const eskiPaket = sunucuSurumu !== null && sunucuSurumu.surum !== FRONTEND_SURUM
 
   function dialoguKapat() {
     setSifreDialogAcik(false)
@@ -79,6 +93,23 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <Typography variant="h6" sx={{ fontWeight: 700 }}>
             Operon <Box component="span" sx={{ color: 'primary.main' }}>Puantaj</Box>
           </Typography>
+          <Tooltip
+            title={
+              eskiPaket
+                ? `Tarayıcınızda v${FRONTEND_SURUM} yüklü, sunucuda v${sunucuSurumu?.surum} çalışıyor — sayfayı yenileyin (Ctrl+F5).`
+                : sunucuSurumu
+                  ? `${sunucuSurumu.ad} — ${sunucuSurumu.tarih}`
+                  : 'Sürüm bilgisi alınamadı'
+            }
+          >
+            <Chip
+              size="small"
+              label={eskiPaket ? `v${FRONTEND_SURUM} — yenileyin` : `v${sunucuSurumu?.surum ?? FRONTEND_SURUM}`}
+              color={eskiPaket ? 'warning' : 'default'}
+              variant={eskiPaket ? 'filled' : 'outlined'}
+              sx={{ color: 'white', borderColor: 'rgba(255,255,255,0.4)' }}
+            />
+          </Tooltip>
           <Stack direction="row" spacing={1} sx={{ flexGrow: 1 }}>
             {NAV_ITEMS.filter(
               (item) =>
