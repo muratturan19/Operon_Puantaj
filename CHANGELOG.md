@@ -9,6 +9,40 @@
 > birlikte güncellenir: `backend/app/core/version.py` ve `frontend/src/config/surum.ts`.
 > Canlıdaki sürüm `GET /api/surum` ile sorulabilir, arayüzde sağ üstteki rozette görünür.
 
+## [4.9.3] — 2026-09-01 (KRİTİK: satır silme formül hizasını bozuyordu — 4.9.1 regresyonu)
+
+Müşteri geri bildirimi: *"değer olarak görünüyor personeller listenin alt kısmında, bi de
+mesela şennura çalışılan gün ekliyorum benim satırımda hesaplama yapıyor."*
+**Bu, aynı gün 4.9.1 ile eklenen "ayrılmış personeli sayfadan çıkar" özelliğinin yan
+etkisiydi — kendi ürettiğimiz bir regresyon.**
+
+### Düzeltilenler
+
+- **`openpyxl.delete_rows()` / `insert_rows()` formül METNİNİ değiştirmez.** Hücreleri
+  taşırlar ama `=C46/D46` yazan bir formül, satır 44'e kaysa bile `=C46/D46` kalır. 4.9.1'de
+  5 ayrılmış personelin satırı silinince altındaki **29 satırın formülleri bir/iki satır
+  aşağıyı** göstermeye başladı: ŞENNUR BOBİÇ 44. satıra kaydı ama hâlâ 46. satırı (FİKRİYE
+  BULUT) hesaplıyordu, EMİNE TURAN 41. satırdan 42'yi (CANSEL ŞAHİN) okuyordu. Müşterinin
+  "başkasının satırında hesaplama yapıyor" dediği tam olarak bu.
+  - `excel_adapter._formulleri_kaydir()` — kayan her satırın formülü, hücrenin kaymadan
+    önceki konumundan bugünkü konumuna `Translator` ile çevrilir. Hem silmede (−1) hem
+    eklemede (+1) çalışır.
+  - TOPLAM satırı bilinçli olarak bu çevirinin DIŞINDA: `=SUM(E3:E55)` çevrilseydi aralığın
+    başı da kayardı (`=SUM(E4:E56)`). Onun yalnızca bitişi `_toplam_araliklarini_genislet/
+    daralt` ile düzeltilir.
+- **Bozulan müşteri dosyası kurtarıldı.** Master, ilk yükleme yedeğinden (3 Temmuz,
+  formülleri sağlam) geri alınıp Temmuz ve Ağustos sayfaları düzeltilmiş kodla yeniden
+  üretildi. Ağustos'ta doğrulama: 50 roster satırının **hiçbiri** kendi satırı dışına
+  referans vermiyor.
+
+### Doğrulama
+
+- `pytest` 50/50 yeşil. Üç yeni test, "bir roster satırındaki hiçbir formül kendi satırı
+  dışına referans veremez" değişmezini doğruluyor — silme sonrası, ekleme sonrası ve
+  gerçek export sırasıyla (önce silme, sonra ekleme) birlikte.
+- Testlerin hatayı gerçekten yakaladığı, düzeltme geçici olarak kapatılıp doğrulandı
+  (2 test kırmızıya döndü, 49 satır hizasız çıktı).
+
 ## [4.9.2] — 2026-08-25 (yarım gün izin)
 
 Müşteri geri bildirimi: *"yarım gün izin verirken 3 deseler az, 4 deseler fazla oluyor."*

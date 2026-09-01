@@ -289,6 +289,33 @@ def aktif_sayfa_yap(wb: Workbook, ws: Worksheet) -> None:
         sayfa.sheet_view.tabSelected = sayfa is ws
 
 
+def _formulleri_kaydir(ws: Worksheet, ilk_satir: int, son_satir: int, delta: int) -> None:
+    """Kayan satırların formüllerini kendi yeni satırlarına çevirir.
+
+    ÜRETİM OLAYI (2026-08-25'te girdi, 2026-09-01'de bildirildi): openpyxl'in
+    `insert_rows`/`delete_rows`'u hücreleri
+    taşır ama FORMÜL METNİNİ HİÇ DEĞİŞTİRMEZ. 5 ayrılmış personelin satırı
+    silinince altındaki 29 satırın formülleri eski satır numaralarını göstermeye
+    devam etti: ŞENNUR BOBİÇ 44. satıra kaydı ama formülü hâlâ `=C46/D46` idi,
+    yani bir BAŞKASININ verisini hesaplıyordu. Müşteri geri bildirimi: "şennura
+    çalışılan gün ekliyorum benim satırımda hesaplama yapıyor."
+
+    `delta` satırın kaç satır kaydığıdır (silmede -1, eklemede +1); formül,
+    hücrenin kaymadan önceki konumundan bugünkü konumuna çevrilir.
+
+    DİKKAT: TOPLAM satırı bu fonksiyonla ÇEVRİLMEZ — `=SUM(E3:E55)` çevrilirse
+    aralığın başı da kayar (`=SUM(E4:E56)`). Onun aralığı
+    `_toplam_araliklarini_genislet/daralt` ile sadece bitişinden düzeltilir.
+    """
+    if delta == 0 or ilk_satir > son_satir:
+        return
+    for row in ws.iter_rows(min_row=ilk_satir, max_row=son_satir):
+        for cell in row:
+            if isinstance(cell.value, str) and cell.value.startswith("="):
+                kaynak = f"{cell.column_letter}{cell.row - delta}"
+                cell.value = Translator(cell.value, origin=kaynak).translate_formula(cell.coordinate)
+
+
 def _toplam_araliklarini_genislet(ws: Worksheet, toplam_row: int, eski_son: int, yeni_son: int) -> None:
     """TOPLAM satırındaki `=SUM(E3:E55)` gibi aralıkların bitişini yeni satıra taşır.
 
@@ -333,7 +360,10 @@ def roster_satiri_ekle(ws: Worksheet, mapping: ExcelMappingConfig, degerler: dic
         if okuma.kolon_harfi and okuma.hedef_alan != "ad_soyad" and okuma.hedef_alan in degerler:
             ws[f"{okuma.kolon_harfi}{yeni_row}"] = degerler[okuma.hedef_alan]
 
+    # TOPLAM bir satır aşağı kaydı: aralığının BİTİŞİ yeni satırı kapsamalı.
     _toplam_araliklarini_genislet(ws, toplam_row + 1, eski_son=referans_row, yeni_son=yeni_row)
+    # TOPLAM'ın altındaki her şey de bir satır kaydı — formülleri düzeltilmeli.
+    _formulleri_kaydir(ws, toplam_row + 2, ws.max_row, +1)
     logger.info("Roster satırı eklendi: %s / %r -> satır %s", ws.title, degerler.get("ad_soyad"), yeni_row)
     return yeni_row
 
@@ -362,12 +392,15 @@ def roster_satirlarini_sil(ws: Worksheet, mapping: ExcelMappingConfig, satirlar:
     if not satirlar:
         return 0
     sm = mapping.sheet_mapping
-    toplam_row = find_toplam_row(ws, sm)
-    eski_son = toplam_row - 1
 
     for satir in sorted(satirlar, reverse=True):   # alttan üste — üsttekilerin no'su kaymasın
+        toplam_row = find_toplam_row(ws, sm)       # her silmede bir yukarı kayar
         ws.delete_rows(satir)
+        # Silinen satırın ALTINDAKİ her şey bir satır yukarı kaydı; openpyxl
+        # formülleri kaydırmadığı için elle çeviriyoruz (bkz. _formulleri_kaydir).
+        _formulleri_kaydir(ws, satir, toplam_row - 2, -1)          # kayan roster satırları
+        _toplam_araliklarini_daralt(ws, toplam_row - 1, toplam_row - 1, toplam_row - 2)
+        _formulleri_kaydir(ws, toplam_row, ws.max_row, -1)         # TOPLAM'ın altı
         logger.info("Roster satırı silindi: %s / satır %s", ws.title, satir)
 
-    _toplam_araliklarini_daralt(ws, toplam_row - len(satirlar), eski_son, eski_son - len(satirlar))
     return len(satirlar)

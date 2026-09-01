@@ -11,6 +11,7 @@ Doğrular:
 - K hücresi FM.TL=0 durumunda formüle geri döner.
 """
 import json
+import re
 import shutil
 from datetime import date
 from pathlib import Path
@@ -319,3 +320,78 @@ def test_roster_satirlarini_sil_toplam_araligini_daraltir(besim_copy, besim_mapp
     toplam_sonra = find_toplam_row(ws, besim_mapping.sheet_mapping)
     assert toplam_sonra == toplam_once - 2
     assert ws[f"E{toplam_sonra}"].value == f"=SUM(E3:E{toplam_sonra - 1})"
+
+
+# ---------------------------------------------------------------------------
+# ÜRETİM OLAYI (2026-08-25'te girdi, 2026-09-01'de bildirildi): openpyxl'in
+# insert_rows/delete_rows'u formül metnini
+# değiştirmez. 5 satır silinince altındaki 29 satırın formülleri eski satırı
+# göstermeye devam etti — müşteri: "şennura çalışılan gün ekliyorum benim
+# satırımda hesaplama yapıyor".
+# ---------------------------------------------------------------------------
+
+_HUCRE_REF = re.compile(r"\$?([A-Z]{1,3})\$?(\d+)")
+
+
+def _satir_referanslari(ws, satir: int) -> set[int]:
+    """Bir satırdaki tüm formüllerin gösterdiği satır numaraları."""
+    referanslar: set[int] = set()
+    for cell in ws[satir]:
+        if isinstance(cell.value, str) and cell.value.startswith("="):
+            referanslar.update(int(m.group(2)) for m in _HUCRE_REF.finditer(cell.value))
+    return referanslar
+
+
+def _tum_roster_kendine_referans_veriyor_mu(ws, mapping) -> list[tuple[int, set[int]]]:
+    """Kendi satırı dışına referans veren roster satırlarını döndürür."""
+    sm = mapping.sheet_mapping
+    toplam_row = find_toplam_row(ws, sm)
+    hatali = []
+    for satir in range(sm.baslangic_satir, toplam_row):
+        yabanci = _satir_referanslari(ws, satir) - {satir}
+        if yabanci:
+            hatali.append((satir, yabanci))
+    return hatali
+
+
+def test_satir_silince_alttaki_formuller_kendi_satirini_gosterir(besim_copy, besim_mapping):
+    wb = open_workbook(str(besim_copy))
+    ws = _temmuz_sayfasi(wb, besim_mapping)
+    assert _tum_roster_kendine_referans_veriyor_mu(ws, besim_mapping) == []  # başlangıç sağlam
+
+    roster = read_roster(ws, besim_mapping)
+    # Ortadan iki satır sil — altındaki her şey kayar
+    roster_satirlarini_sil(ws, besim_mapping, {roster[5].excel_satir, roster[20].excel_satir})
+
+    assert _tum_roster_kendine_referans_veriyor_mu(ws, besim_mapping) == []
+    toplam_row = find_toplam_row(ws, besim_mapping.sheet_mapping)
+    assert ws[f"E{toplam_row}"].value == f"=SUM(E3:E{toplam_row - 1})"
+
+
+def test_satir_eklenince_formul_hizasi_bozulmaz(besim_copy, besim_mapping):
+    wb = open_workbook(str(besim_copy))
+    ws = _temmuz_sayfasi(wb, besim_mapping)
+    roster_satiri_ekle(ws, besim_mapping, {"ad_soyad": "YENİ PERSONEL", "maas": 30000, "ng": 31})
+
+    assert _tum_roster_kendine_referans_veriyor_mu(ws, besim_mapping) == []
+
+
+def test_ekleme_ve_silme_birlikte_hizayi_bozmaz(besim_copy, besim_mapping):
+    """Gerçek export sırası: önce ayrılanlar silinir, sonra eksikler eklenir."""
+    wb = open_workbook(str(besim_copy))
+    ws = _temmuz_sayfasi(wb, besim_mapping)
+    roster = read_roster(ws, besim_mapping)
+
+    roster_satirlarini_sil(
+        ws, besim_mapping,
+        {roster[3].excel_satir, roster[10].excel_satir, roster[30].excel_satir},
+    )
+    roster_satiri_ekle(ws, besim_mapping, {"ad_soyad": "YENİ A", "maas": 30000, "ng": 31})
+    roster_satiri_ekle(ws, besim_mapping, {"ad_soyad": "YENİ B", "maas": 31000, "ng": 31})
+
+    assert _tum_roster_kendine_referans_veriyor_mu(ws, besim_mapping) == []
+    sonra = read_roster(ws, besim_mapping)
+    assert len(sonra) == len(roster) - 3 + 2
+    toplam_row = find_toplam_row(ws, besim_mapping.sheet_mapping)
+    assert ws[f"E{toplam_row}"].value == f"=SUM(E3:E{toplam_row - 1})"
+    assert sonra[-1].alanlar["ad_soyad"] == "YENİ B"
