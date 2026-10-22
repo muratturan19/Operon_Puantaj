@@ -9,6 +9,43 @@
 > birlikte güncellenir: `backend/app/core/version.py` ve `frontend/src/config/surum.ts`.
 > Canlıdaki sürüm `GET /api/surum` ile sorulabilir, arayüzde sağ üstteki rozette görünür.
 
+## [4.9.4] — 2026-10-23 (güvenlik: JWT kütüphanesi python-jose → PyJWT)
+
+Bileşen taramasında (AIAssay Web) üretim imajındaki `python-jose 3.5.0` için **kritik**
+bir açık çıktı: GHSA-3qf3-8w2g-rqmx — DER kodlu açık anahtarlarla algoritma karışıklığı
+korumasının atlatılması. Düzeltilmiş sürümü yok; beraberinde gelen `ecdsa 0.19.2`'de de
+düzeltmesi olmayan bir zamanlama açığı (Minerva) var. Kütüphane bu yüzden tamamen
+bırakıldı, yerine `PyJWT[crypto]` geldi (Operon_RolFit'te aynı geçiş canlıda).
+
+### Değişenler
+
+- **Portal SSO doğrulaması** (`services/portal_sso_service.py`) yalnız RS256 kabul eder;
+  `aud`, `iss` ve `exp` denetlenir, `exp/iat/aud/iss/sub` claim'lerinden biri eksik jeton
+  reddedilir, portal ile saat kayması için 10 sn pay bırakılır. Portal anahtarı artık
+  yalnız **imza** tutmadığında yeniden çekilir (anahtar dönmüş olabilir); süresi dolmuş ya
+  da başka uygulamaya kesilmiş bir jeton portal'a gereksiz istek attırmaz. Anahtar
+  tazelenirken portal'a ulaşılamazsa 500 yerine 401 döner.
+- **Kendi (on-prem) oturum jetonlarımız** (`core/security.py`) aynı HMAC algoritmasıyla
+  (`JWT_ALGORITHM`, varsayılan HS256) imzalanmaya devam eder; `JWT_ALGORITHM` artık yalnız
+  HS256/HS384/HS512 olabilir (`none` ya da asimetrik algoritma seçilemez). `exp` ve `sub`
+  zorunlu; sayısal olmayan bir `sub` 500 yerine 401 verir.
+- `sub` zaten string (`"12"`) yazılıyordu; PyJWT 2.10+ bunu şart koştuğu için davranış
+  değişmedi. **Yeniden giriş gerekmez** — eski jetonlar da string `sub` taşıdığı için
+  geçerli kalır.
+- Arayüz bağımlılıkları kendi sürüm aralıkları içinde güncellendi: `axios` 1.18.1 → 1.20.0,
+  `follow-redirects` 1.16.0 → 1.16.1, `react-router(-dom)` 7.18.1 → 7.18.4.
+  `package-lock.json` yalnız bu paketlerin kayıtlarında değişti (npm 11'in `update`'i,
+  Docker'daki npm 10'un `ci`'ı için gereken isteğe bağlı kayıtları siliyordu).
+
+### Doğrulama
+
+- `pytest` 67/67 yeşil (50 mevcut + 17 yeni `tests/test_portal_sso_jwt.py`): gerçek RS256
+  jetonlarla geçerli jeton geçer; yanlış `aud`/`iss`, süresi dolmuş, `sub`/`aud`/`iat`
+  eksik, yabancı anahtarla imzalı, açık anahtarla HS256 sahtesi ve `alg: none`
+  reddedilir. Kendi jetonumuz üret → doğrula turunda string `sub` int kullanıcı id'sine
+  döner; int `sub`, süresi dolmuş, `exp`'siz, yanlış sırla imzalı ve `alg: none` jeton 401.
+- `npm ci` (npm 10 ve 11) ve `npm run build` başarılı.
+
 ## [4.9.3] — 2026-09-01 (KRİTİK: satır silme formül hizasını bozuyordu — 4.9.1 regresyonu)
 
 Müşteri geri bildirimi: *"değer olarak görünüyor personeller listenin alt kısmında, bi de

@@ -11,11 +11,27 @@ from datetime import datetime, timezone
 from typing import Dict, Optional
 
 import httpx
-from jose import JWTError, jwt
+import jwt  # PyJWT — python-jose bırakıldı: GHSA-3qf3-8w2g-rqmx (kritik, düzeltmesi yok)
 
 from app.core.config import get_settings
 
 logger = logging.getLogger("operon_puantaj.portal_sso")
+
+# Portal jetonunda bulunması ZORUNLU claim'ler — eksikse jeton reddedilir.
+_ZORUNLU_CLAIMLER = ["exp", "iat", "aud", "iss", "sub"]
+
+
+def _coz(token: str, public_key: str) -> Dict:
+    settings = get_settings()
+    return jwt.decode(
+        token,
+        public_key,
+        algorithms=["RS256"],              # yalnız RS256: HS/none algoritma karışıklığı kapalı
+        audience=settings.portal_app_slug,
+        issuer=settings.portal_issuer,
+        options={"require": _ZORUNLU_CLAIMLER},
+        leeway=10,                         # portal ile saat kayması payı (sn)
+    )
 
 
 class PortalSSOService:
@@ -46,7 +62,6 @@ class PortalSSOService:
 
     @classmethod
     async def validate_token(cls, token: str) -> Dict:
-        settings = get_settings()
         try:
             public_key = await cls.get_public_key()
         except Exception as e:
@@ -57,35 +72,32 @@ class PortalSSOService:
                 raise ValueError(f"Portal public key alınamadı: {e}")
 
         try:
-            payload = jwt.decode(
-                token,
-                public_key,
-                algorithms=["RS256"],
-                audience=settings.portal_app_slug,
-                issuer=settings.portal_issuer,
-            )
+            payload = _coz(token, public_key)
+        except jwt.InvalidSignatureError:
+            # İmza tutmadı: portal anahtarı dönmüş olabilir — anahtarı bir kez tazeleyip yeniden dene.
+            # (Süresi dolmuş / yanlış aud gibi claim hataları anahtar tazelemeyi tetiklemez.)
+            logger.warning("Token imzası doğrulanamadı, portal public key yenileniyor...")
+            try:
+                public_key = await cls.get_public_key(force_refresh=True)
+            except Exception as e:
+                raise ValueError(f"Portal public key alınamadı: {e}")
+            try:
+                payload = _coz(token, public_key)
+            except jwt.PyJWTError as e:
+                raise ValueError(f"Geçersiz token: {e}")
             logger.info(
-                "Token OK — user=%s tenant=%s",
+                "Token OK (yenilenen key ile) — user=%s tenant=%s",
                 payload.get("username"),
                 payload.get("tenant_slug"),
             )
             return payload
-        except JWTError:
-            logger.warning("Token doğrulama başarısız, portal public key yenileniyor...")
-            try:
-                public_key = await cls.get_public_key(force_refresh=True)
-                payload = jwt.decode(
-                    token,
-                    public_key,
-                    algorithms=["RS256"],
-                    audience=settings.portal_app_slug,
-                    issuer=settings.portal_issuer,
-                )
-                logger.info(
-                    "Token OK (yenilenen key ile) — user=%s tenant=%s",
-                    payload.get("username"),
-                    payload.get("tenant_slug"),
-                )
-                return payload
-            except JWTError as e:
-                raise ValueError(f"Geçersiz token: {e}")
+        except jwt.PyJWTError as e:
+            # Mesaja jetonun kendisi yazılmaz — log'a/yanıta sır sızmaz.
+            raise ValueError(f"Geçersiz token: {e}")
+
+        logger.info(
+            "Token OK — user=%s tenant=%s",
+            payload.get("username"),
+            payload.get("tenant_slug"),
+        )
+        return payload

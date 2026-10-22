@@ -17,7 +17,7 @@ from typing import Optional
 import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt  # PyJWT — python-jose bırakıldı: GHSA-3qf3-8w2g-rqmx (kritik, düzeltmesi yok)
 from sqlmodel import Session, select
 
 from app.core.auth_context import get_tenant_context
@@ -27,6 +27,17 @@ from app.models.rbac import Kullanici, Rol
 from app.models.sirket import Sirket
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+# Kendi (on-prem) oturum jetonlarımız yalnız HMAC ile imzalanır; `none` ve asimetrik
+# algoritmalar JWT_ALGORITHM ile bile seçilemez.
+_IZINLI_ALGORITMALAR = {"HS256", "HS384", "HS512"}
+
+
+def _jwt_algoritmasi() -> str:
+    algoritma = get_settings().jwt_algorithm
+    if algoritma not in _IZINLI_ALGORITMALAR:
+        raise RuntimeError(f"JWT_ALGORITHM={algoritma!r} desteklenmiyor (izinli: HS256/HS384/HS512)")
+    return algoritma
 
 
 def hash_password(password: str) -> str:
@@ -41,12 +52,12 @@ def create_access_token(kullanici: Kullanici) -> str:
     settings = get_settings()
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
     payload = {
-        "sub": str(kullanici.id),
+        "sub": str(kullanici.id),  # PyJWT >=2.10 sub'ın string olmasını şart koşar
         "kullanici_adi": kullanici.kullanici_adi,
         "sirket_id": kullanici.sirket_id,
         "exp": expire,
     }
-    return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+    return jwt.encode(payload, settings.secret_key, algorithm=_jwt_algoritmasi())
 
 
 def authenticate_user(session: Session, kullanici_adi: str, password: str) -> Optional[Kullanici]:
@@ -71,14 +82,17 @@ def get_current_user_onprem(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
-        user_id = payload.get("sub")
-        if user_id is None:
-            raise credentials_exception
-    except JWTError:
+        payload = jwt.decode(
+            token,
+            settings.secret_key,
+            algorithms=[_jwt_algoritmasi()],
+            options={"require": ["exp", "sub"]},
+        )
+        user_id = int(payload["sub"])  # sub jetonda string ("12"), DB anahtarı int
+    except (jwt.PyJWTError, KeyError, ValueError):
         raise credentials_exception
 
-    kullanici = session.get(Kullanici, int(user_id))
+    kullanici = session.get(Kullanici, user_id)
     if kullanici is None or not kullanici.aktif:
         raise credentials_exception
     return kullanici
