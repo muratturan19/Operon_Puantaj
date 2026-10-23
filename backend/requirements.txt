@@ -9,5 +9,6 @@ PyJWT[crypto]
 bcrypt
 python-multipart
 openpyxl
+defusedxml                  # openpyxl bunu kendiliğinden kullanır: yüklenen Excel'de DTD/varlık reddedilir (CVE-2026-115506, gömülü expat CPU DoS; 2026-10-24)
 pytest
 httpx
