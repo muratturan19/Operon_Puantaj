@@ -16,6 +16,8 @@ from typing import Optional
 
 from sqlmodel import Field, SQLModel, UniqueConstraint
 
+from app.core.zaman import simdi_utc
+
 
 class PersonelDonemAyar(SQLModel, table=True):
     __tablename__ = "personel_donem_ayar"
@@ -25,4 +27,4 @@ class PersonelDonemAyar(SQLModel, table=True):
     personel_id: int = Field(foreign_key="personel.id")
     donem_id: int = Field(foreign_key="donem.id")
     ng: int
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=simdi_utc)

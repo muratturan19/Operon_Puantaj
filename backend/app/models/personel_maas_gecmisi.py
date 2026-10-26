@@ -24,6 +24,8 @@ from typing import Optional
 
 from sqlmodel import Field, SQLModel, UniqueConstraint
 
+from app.core.zaman import simdi_utc
+
 
 class PersonelMaasGecmisi(SQLModel, table=True):
     __tablename__ = "personel_maas_gecmisi"
@@ -35,4 +37,4 @@ class PersonelMaasGecmisi(SQLModel, table=True):
     ay: int                                       # bu yıl/ay ve sonrası için geçerli (bir sonraki kayda kadar)
     maas: float
     created_by_id: Optional[int] = Field(default=None, foreign_key="kullanici.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=simdi_utc)

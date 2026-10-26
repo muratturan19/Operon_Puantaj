@@ -14,6 +14,8 @@ from typing import Optional
 
 from sqlmodel import Field, SQLModel
 
+from app.core.zaman import simdi_utc
+
 
 class Personel(SQLModel, table=True):
     __tablename__ = "personel"
@@ -27,7 +29,7 @@ class Personel(SQLModel, table=True):
     excel_kaynak_satir: Optional[int] = None          # BANKA sayfasındaki orijinal satır no (round-trip eşleme)
     ise_baslama_tarihi: Optional[date] = None         # None = takip başlamadan önce zaten işe alınmış
     isten_cikis_tarihi: Optional[date] = None         # son çalışılan gün (dahil); None = hâlâ çalışıyor
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=simdi_utc)
     updated_at: Optional[datetime] = None
 
     @property

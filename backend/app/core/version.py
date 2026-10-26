@@ -13,6 +13,6 @@ kullanıcının tarayıcısında ESKİ bir arayüz yüklüdür (önbellek) — U
 """
 from __future__ import annotations
 
-SURUM = "4.9.4"
-SURUM_TARIHI = "2026-10-23"
-SURUM_ADI = "Faz 4.9 — export sekmesi, Ç.GÜN dönem içi hesabı, formül hizası"
+SURUM = "4.9.6"
+SURUM_TARIHI = "2026-10-26"
+SURUM_ADI = "Faz 4.9 — SaaS'ta oturum yoksa Portal'a yönlendirme"

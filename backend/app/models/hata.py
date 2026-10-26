@@ -17,13 +17,15 @@ from typing import Optional
 from sqlalchemy import Column, Text
 from sqlmodel import Field, SQLModel
 
+from app.core.zaman import simdi_utc
+
 
 class HataKaydi(SQLModel, table=True):
     __tablename__ = "error_log"
 
     id: Optional[int] = Field(default=None, primary_key=True)
     istek_id: str = Field(index=True)                 # kullanıcıya gösterilen takip kodu
-    zaman: datetime = Field(default_factory=datetime.utcnow, index=True)
+    zaman: datetime = Field(default_factory=simdi_utc, index=True)
     yol: str                                          # "/api/excel/export"
     metod: str                                        # "GET" | "POST" | ...
     sorgu: Optional[str] = None                       # query string (parametreler teşhis için kritik)

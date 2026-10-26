@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from app.core.zaman import simdi_utc
 from app.core.database import get_session
 from app.core.permissions import GOREBILIR_MAAS_TUTARI, PERSONEL_YONETEBILIR, PUANTAJ_GOREBILIR
 from app.core.security import require_permission
@@ -140,7 +141,7 @@ def guncelle(
     guncellenecek = payload.model_dump(exclude_unset=True)
     for alan, deger in guncellenecek.items():
         setattr(personel, alan, deger)
-    personel.updated_at = datetime.utcnow()
+    personel.updated_at = simdi_utc()
     session.add(personel)
     session.commit()
     session.refresh(personel)
@@ -220,7 +221,7 @@ def zam_gir(
         # Aynı (yıl,ay) için düzeltme — iki farklı değer anlamsız olurdu, üzerine yazılır.
         mevcut_kayit.maas = payload.maas
         mevcut_kayit.created_by_id = current_user.id
-        mevcut_kayit.created_at = datetime.utcnow()
+        mevcut_kayit.created_at = simdi_utc()
         session.add(mevcut_kayit)
     else:
         session.add(PersonelMaasGecmisi(
@@ -232,7 +233,7 @@ def zam_gir(
     # `Personel.maas` "güncel" değeri olarak senkron tutulur (yeni personel/hiç
     # zam girilmemiş kişiler için efektif_maas()'ın düştüğü fallback budur).
     personel.maas = payload.maas
-    personel.updated_at = datetime.utcnow()
+    personel.updated_at = simdi_utc()
     session.add(personel)
     session.commit()
     session.refresh(personel)

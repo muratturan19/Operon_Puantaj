@@ -15,6 +15,8 @@ from typing import Optional
 from sqlalchemy import Column, JSON
 from sqlmodel import Field, SQLModel
 
+from app.core.zaman import simdi_utc
+
 
 class Rol(SQLModel, table=True):
     __tablename__ = "rol"
@@ -25,7 +27,7 @@ class Rol(SQLModel, table=True):
     ad: str
     izinler: dict = Field(default_factory=dict, sa_column=Column(JSON))
     sistem_varsayilani: bool = False
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=simdi_utc)
 
 
 class Kullanici(SQLModel, table=True):
@@ -39,5 +41,5 @@ class Kullanici(SQLModel, table=True):
     hashed_password: str
     rol_id: int = Field(foreign_key="rol.id")
     aktif: bool = True
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=simdi_utc)
     last_login: Optional[datetime] = None

@@ -26,6 +26,8 @@ from typing import Optional
 
 from sqlmodel import Field, SQLModel, UniqueConstraint
 
+from app.core.zaman import simdi_utc
+
 
 class PuantajGirisi(SQLModel, table=True):
     __tablename__ = "puantaj_girisi"
@@ -40,5 +42,5 @@ class PuantajGirisi(SQLModel, table=True):
     fm_saat: float = 0
     created_by_id: Optional[int] = Field(default=None, foreign_key="kullanici.id")
     updated_by_id: Optional[int] = Field(default=None, foreign_key="kullanici.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=simdi_utc)
     updated_at: Optional[datetime] = None

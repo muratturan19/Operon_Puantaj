@@ -27,6 +27,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from app.core.zaman import simdi_utc
 from app.core.database import get_session
 from app.core.permissions import EXCEL_DISA_AKTARABILIR, EXCEL_ICE_AKTARABILIR, GOREBILIR_MAAS_TUTARI
 from app.core.security import require_permission
@@ -238,7 +239,7 @@ async def ice_aktar(
                 mevcut.maas = kayit.alanlar.get("maas") or mevcut.maas
                 mevcut.ng = kayit.alanlar.get("ng") or mevcut.ng
                 mevcut.excel_kaynak_satir = kayit.excel_satir
-                mevcut.updated_at = datetime.utcnow()
+                mevcut.updated_at = simdi_utc()
                 session.add(mevcut)
                 guncellenen += 1
         session.commit()

@@ -2,13 +2,13 @@
 """api/routes/auth.py — Yerel kullanıcı adı/şifre girişi (Faz 1). Portal SSO Faz 2+ (CLAUDE.md §8.2)."""
 from __future__ import annotations
 
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlmodel import Session
 
+from app.core.zaman import simdi_utc
 from app.core.config import get_settings
 from app.core.database import get_session
 from app.core.security import authenticate_user, create_access_token, get_current_user
@@ -48,7 +48,7 @@ def login(
             detail="Kullanıcı adı veya şifre hatalı",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    kullanici.last_login = datetime.utcnow()
+    kullanici.last_login = simdi_utc()
     session.add(kullanici)
     session.commit()
 

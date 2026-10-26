@@ -14,6 +14,8 @@ from typing import Optional
 from sqlalchemy import Column, JSON
 from sqlmodel import Field, SQLModel
 
+from app.core.zaman import simdi_utc
+
 
 class AuditLog(SQLModel, table=True):
     __tablename__ = "audit_log"
@@ -25,5 +27,5 @@ class AuditLog(SQLModel, table=True):
     entity_id: str = Field(index=True)
     aksiyon: str                              # "create" | "update" | "delete"
     changes: dict = Field(default_factory=dict, sa_column=Column(JSON))  # {"alan": {"old": ..., "new": ...}}
-    zaman: datetime = Field(default_factory=datetime.utcnow, index=True)
+    zaman: datetime = Field(default_factory=simdi_utc, index=True)
     ip_adresi: Optional[str] = None

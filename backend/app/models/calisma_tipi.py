@@ -16,6 +16,8 @@ from typing import Optional
 from sqlalchemy import Column, JSON
 from sqlmodel import Field, SQLModel
 
+from app.core.zaman import simdi_utc
+
 
 class CalismaTipi(SQLModel, table=True):
     __tablename__ = "calisma_tipi"
@@ -41,4 +43,4 @@ class CalismaTipi(SQLModel, table=True):
     # bir tip (ör. BY, Cumartesi de tatil) gibi farklı düzenlere göre ayarlanabilir.
     hafta_tatili_gunleri: list[int] = Field(default_factory=lambda: [6], sa_column=Column(JSON))
     aktif: bool = True
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=simdi_utc)

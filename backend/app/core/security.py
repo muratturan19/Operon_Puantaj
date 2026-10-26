@@ -20,6 +20,7 @@ from fastapi.security import OAuth2PasswordBearer
 import jwt  # PyJWT — python-jose bırakıldı: GHSA-3qf3-8w2g-rqmx (kritik, düzeltmesi yok)
 from sqlmodel import Session, select
 
+from app.core.zaman import simdi_utc
 from app.core.auth_context import get_tenant_context
 from app.core.config import get_settings
 from app.core.database import get_session, get_session_saas
@@ -151,7 +152,7 @@ def get_current_user_saas(
     if not kullanici.aktif:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Kullanıcı pasif")
 
-    kullanici.last_login = datetime.utcnow()
+    kullanici.last_login = simdi_utc()
     session.add(kullanici)
     session.commit()
     return kullanici

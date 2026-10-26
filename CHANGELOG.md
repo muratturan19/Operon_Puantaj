@@ -9,6 +9,44 @@
 > birlikte güncellenir: `backend/app/core/version.py` ve `frontend/src/config/surum.ts`.
 > Canlıdaki sürüm `GET /api/surum` ile sorulabilir, arayüzde sağ üstteki rozette görünür.
 
+## [4.9.6] — 2026-10-26 (arayüz: SaaS'ta oturum yoksa şifre formu yerine Portal'a yönlendirme)
+
+26 Ekim'de, 4.9.5'te düzeltilen giriş hatası sürerken bir kullanıcı karşısına çıkan eski şifre
+formuna kullanıcı adı ("2026-7") ve şifre yazdı, "Kullanıcı adı veya şifre hatalı" gördü ve ne
+yapacağını bilemedi. SaaS modda (`AUTH_MODE=saas`) bu form hiçbir zaman çalışamaz: yerel giriş
+(`POST /api/auth/login`) bilerek kapalıdır, 404 döner; arayüz ise girişteki her hatayı
+"Kullanıcı adı veya şifre hatalı" diye gösteriyordu. Oturum yalnız Portal SSO'dan gelir. SSO
+çerezi yoksa ya da `/api/auth/me` 401 dışında bir hata verirse (bakım sonrasındaki 500 gibi)
+kullanıcı `/login`'e düşüyor ve bu kullanılamaz formu görüyordu.
+
+### Değişenler
+
+- `pages/LoginPage.tsx`: SaaS derlemesinde (`VITE_AUTH_MODE=saas`, Dockerfile) şifre formu hiç
+  gösterilmez. Yerine aynı "Operon Puantaj" kartında **"Oturumunuz bulunamadı"** başlığı,
+  girişin Kolektif360 portalı üzerinden yapıldığını anlatan kısa bir metin ve Portal'ın
+  uygulama listesine (`PORTAL_APPS_URL`, oturum düşünce zaten kullanılan adres) giden
+  **"Portala git"** düğmesi çıkar. Mod derleme anında bilindiği için sunucuya ek istek
+  atılmaz: oturum bozukken backend'in kendisi de hata veriyor olabilir.
+- On-prem derlemede kullanıcı adı/şifre formu ve hata mesajı değişmedi.
+- Backend değişmedi (yalnız sürüm numarası).
+
+## [4.9.5] — 2026-10-26 (düzeltme: bakımdan sonra kimse giriş yapamıyordu)
+
+24 Ekim bakımında imaj yeniden derlenince `sqlmodel` 0.0.48'e çıktı. Bu sürüm saat dilimsiz
+`datetime` değerini veritabanına yazarken reddediyor. Portal girişinde `last_login =
+datetime.utcnow()` her seferinde 500 verdi; arayüz bu yüzden eski şifre formuna düştü ve
+kullanıcılar "Kullanıcı adı veya şifre hatalı" gördü. Hatanın kendisi de `error_log`'a aynı
+sebeple yazılamadı (yalnız konteyner logunda görünüyordu). Portal 9 Ekim'de aynı sorunu yaşamıştı.
+
+### Değişenler
+
+- DB'ye yazılan "şimdi" değeri tek yerden gelir: `app/core/zaman.py` → `simdi_utc()`
+  (saat dilimli UTC). Tüm model varsayılanları (`created_at`, `zaman`) ve atamalar
+  (`last_login`, `updated_at`) buna çevrildi. Sütunlar `timestamp without time zone`;
+  DB oturumu UTC olduğu için saklanan saat öncekiyle aynı, şema değişikliği yok.
+- `tests/test_datetime_awareness.py`: tablo varsayılanları saat dilimli mi, gerçek ORM
+  yazma/okuma turu, kaynakta `datetime.utcnow` geri gelirse test kırılır.
+
 ## [4.9.4] — 2026-10-23 (güvenlik: JWT kütüphanesi python-jose → PyJWT)
 
 Bileşen taramasında (AIAssay Web) üretim imajındaki `python-jose 3.5.0` için **kritik**

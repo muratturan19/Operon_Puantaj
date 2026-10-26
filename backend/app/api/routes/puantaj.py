@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from app.core.zaman import simdi_utc
 from app.core.database import get_session
 from app.core.permissions import (
     DONEM_TEMIZLEYEBILIR,
@@ -166,7 +167,7 @@ def gun_guncelle(
     for alan, deger in payload.model_dump().items():
         setattr(mevcut, alan, deger)
     mevcut.updated_by_id = current_user.id
-    mevcut.updated_at = datetime.utcnow()
+    mevcut.updated_at = simdi_utc()
     session.add(mevcut)
     session.commit()
     session.refresh(mevcut)

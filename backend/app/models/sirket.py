@@ -12,6 +12,7 @@ from typing import Optional
 
 from sqlmodel import Field, SQLModel
 
+from app.core.zaman import simdi_utc
 from app.services.payroll_calc import RAPORLU_HIC_ODEME
 
 
@@ -22,4 +23,4 @@ class Sirket(SQLModel, table=True):
     ad: str
     raporlu_politikasi: str = RAPORLU_HIC_ODEME  # "tam_ode" | "hic_odeme" | "n_gun_esigi"
     raporlu_esik_gun: int = 0  # yalnızca n_gun_esigi politikasında kullanılır
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=simdi_utc)
