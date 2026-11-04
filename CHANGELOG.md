@@ -9,6 +9,12 @@
 > birlikte güncellenir: `backend/app/core/version.py` ve `frontend/src/config/surum.ts`.
 > Canlıdaki sürüm `GET /api/surum` ile sorulabilir, arayüzde sağ üstteki rozette görünür.
 
+## [4.9.7] — 2026-11-04
+
+**Neden:** ServerCare (bakım programı) güvenlik güncellemelerini bu uygulamaya kendisi yayınlayabilsin diye sürümü depodaki `VERSION` dosyasından okur; her bakım yayınında sürüm bir artırılır ve CHANGELOG'a kayıt düşülür.
+
+- Kökte `VERSION` dosyası eklendi (`4.9.7`). Uygulama kodu değişmedi.
+
 ## [4.9.6] — 2026-10-26 (arayüz: SaaS'ta oturum yoksa şifre formu yerine Portal'a yönlendirme)
 
 26 Ekim'de, 4.9.5'te düzeltilen giriş hatası sürerken bir kullanıcı karşısına çıkan eski şifre
