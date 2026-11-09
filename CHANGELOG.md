@@ -9,6 +9,17 @@
 > birlikte güncellenir: `backend/app/core/version.py` ve `frontend/src/config/surum.ts`.
 > Canlıdaki sürüm `GET /api/surum` ile sorulabilir, arayüzde sağ üstteki rozette görünür.
 
+## 4.9.8 — 2026-11-10 · Yeniden derleme (ServerCare)
+
+**Neden:** Güvenlik bakımı — 1 önemli açık kapanıyor (apt 3.0.3, libapt-pkg7.0 3.0.3).
+
+- Servis güncel taban imaj ve güncel kütüphanelerle yeniden derlendi (bağımlılıklar sabitlenmediği için paket yöneticisi en yeni uyumlu sürümleri seçti).
+- Değişen paketlerden: apt 3.0.3 → 3.0.4; libapt-pkg7.0 3.0.3 → 3.0.4; tzdata 2026c → 2026f.
+- Kabul: yalıtılmış ağda, gecelik yedekten geçici veritabanı kopyasıyla — gerçek Portal girişi ve korumalı uç.
+- Yayın: admin onayıyla gece penceresinde; konteyner yeniden oluşturuldu (kısa kesinti), sağlık ve giriş doğrulandı; önceki imaj geri dönüş etiketinde.
+- Servis `puantaj-postgres`; imaj `baa22e6286bf` → aday `708267750208`; açıklar: CVE-2026-109518.
+- Kaynak: ServerCare maintenance_0d70b35324a1445fba1464094a81513f. <!-- servercare-change:change_25e7865669fe40e6b51d20416a5fe150 -->
+
 ## [4.9.7] — 2026-11-04
 
 **Neden:** ServerCare (bakım programı) güvenlik güncellemelerini bu uygulamaya kendisi yayınlayabilsin diye sürümü depodaki `VERSION` dosyasından okur; her bakım yayınında sürüm bir artırılır ve CHANGELOG'a kayıt düşülür.
