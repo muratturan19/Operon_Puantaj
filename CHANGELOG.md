@@ -9,6 +9,17 @@
 > birlikte güncellenir: `backend/app/core/version.py` ve `frontend/src/config/surum.ts`.
 > Canlıdaki sürüm `GET /api/surum` ile sorulabilir, arayüzde sağ üstteki rozette görünür.
 
+## 4.9.9 — 2026-11-11 · Yeniden derleme (ServerCare)
+
+**Neden:** Güvenlik bakımı — 1 önemli açık kapanıyor (apt 3.0.3, libapt-pkg7.0 3.0.3).
+
+- Servis güncel taban imaj ve güncel kütüphanelerle yeniden derlendi (bağımlılıklar sabitlenmediği için paket yöneticisi en yeni uyumlu sürümleri seçti).
+- Değişen paketlerden: apt 3.0.3 → 3.0.4; libapt-pkg7.0 3.0.3 → 3.0.4; tzdata 2026c → 2026f; SQLAlchemy 2.1.6 → 2.1.8; anyio 4.15.1 → 4.16.0; click 8.5.0 → 8.5.1; fastapi 0.162.0 → 0.162.2; opentelemetry-api 1.45.1 → 1.45.2; pydantic 2.14.1 → 2.14.3; pydantic-settings 2.16.1 → 2.16.2.
+- Kabul: yalıtılmış ağda, gecelik yedekten geçici veritabanı kopyasıyla — gerçek Portal girişi ve korumalı uç.
+- Yayın: ServerCare (otomatik — düşük riskli sınıf) onayıyla gece penceresinde; konteyner yeniden oluşturuldu (kısa kesinti), sağlık ve giriş doğrulandı; önceki imaj geri dönüş etiketinde.
+- Servis `puantaj`; imaj `facb3eec1bec` → aday `b04600850f82`; açıklar: CVE-2026-109518.
+- Kaynak: ServerCare maintenance_faa593c82bda4730bdd2693b7dae3ce6. <!-- servercare-change:change_9fce09a6f83c47188160ccc5b5d46e1b -->
+
 ## 4.9.8 — 2026-11-10 · Yeniden derleme (ServerCare)
 
 **Neden:** Güvenlik bakımı — 1 önemli açık kapanıyor (apt 3.0.3, libapt-pkg7.0 3.0.3).
